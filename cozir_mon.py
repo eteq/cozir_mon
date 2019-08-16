@@ -20,9 +20,11 @@ def get_single_measurement(ser, n_samples=1):
     return b''.join(lines)
 
 
-def do_measurement_loop(ser, fn, delay, n_samples):
-    with open(fn, 'w') as f:
+def do_measurement_loop(ser, fn, delay, n_samples, verbose=False, append=False):
+    with open(fn, 'a' if append else 'w') as f:
         while True:
+            if verbose:
+                print('Measuring...')
             f.write(str(datetime.now()))
             meas = get_single_measurement(ser, n_samples)
             f.write(meas.decode())
@@ -40,16 +42,20 @@ if __name__ == '__main__':
     parser.add_argument('--port', '-p', default='/dev/serial0')
     parser.add_argument('--delay', '-d', default=60)
     parser.add_argument('--number-samples', '-n', default=5)
+    parser.add_argument('--verbose', '-v', default=False)
+    parser.add_argument('--append-file', '-a', default=False)
 
     args = parser.parse_args()
 
 
     ser = setup_connection(args.port)
     try:
-        print("First measurement")
+        if args.verbose:
+            print("First measurement")
         print(get_single_measurement(ser))
         if args.output_file is not None:
-            print("Looping")
-            do_measurement_loop(ser, args.output_file, args.delay, args.number_samples)
+            if args.verbose:
+                print("Looping")
+            do_measurement_loop(ser, args.output_file, args.delay, args.number_samples, append=args.append_file, verbose=args.verbose)
     finally:
         ser.close()
