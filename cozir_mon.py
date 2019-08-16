@@ -46,9 +46,10 @@ if __name__ == '__main__':
 
     ser = setup_connection(args.port)
     try:
-        if args.output_file is None:
+            print("First measurement")
             print(get_single_measurement(ser))
-        else:
+        if args.output_file is not None:
+            print("Looping")
             do_measurement_loop(ser, args.output_file, args.delay, args.number_samples)
     finally:
         ser.close()
