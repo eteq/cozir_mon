@@ -14,6 +14,7 @@ def get_single_measurement(ser, n_samples=1):
     lines = []
     for _ in range(n_samples):
         ser.write(b'Q\r\n')
+        sleep(.01)
         lines.append(ser.read(200))
 
     return b''.join(lines)
