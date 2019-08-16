@@ -25,7 +25,7 @@ def do_measurement_loop(ser, fn, delay, n_samples):
         while True:
             f.write(str(datetime.now()))
             meas = get_single_measurement(ser, n_samples)
-            f.write(meas)
+            f.write(meas.encode())
             f.write(str(datetime.now()))
 
             f.flush()
