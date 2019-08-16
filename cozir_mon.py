@@ -50,4 +50,4 @@ if __name__ == '__main__':
         else:
             do_measurement_loop(ser, args.output_file, args.delay, args.number_samples)
     finally:
-    ser.close()
+        ser.close()
