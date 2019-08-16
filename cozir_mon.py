@@ -42,8 +42,8 @@ if __name__ == '__main__':
     parser.add_argument('--port', '-p', default='/dev/serial0')
     parser.add_argument('--delay', '-d', default=60)
     parser.add_argument('--number-samples', '-n', default=5)
-    parser.add_argument('--verbose', '-v', default=False)
-    parser.add_argument('--append-file', '-a', default=False)
+    parser.add_argument('--verbose', '-v', action='store_true')
+    parser.add_argument('--append-file', '-a', action='store_true')
 
     args = parser.parse_args()
 
