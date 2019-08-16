@@ -1,15 +1,16 @@
+import serial
 
-def setup(port):
-    with open(port, 'rwb') as f:
-        f.flush()
-        f.write(b'K 2\r\n')
-        f.flush()
+def setup_connection(port):
+    ser = serial.Serial(port, timeout=1)
+    ser.write(b'K 2\r\n')
+    ser.flush()
+    ser.close()
 
-def get_single_measurement(port):
-    with open(port, 'rwb') as f:
-        f.flush()
-        f.write(b'Q\r\n')
-        return f.read()
+    return serial.Serial(port, timeout=1)
+
+def get_single_measurement(ser):
+    ser.write(b'Q\r\n')
+    return ser.read(200)
 
 if __name__ == '__main__':
     import argparse
@@ -19,4 +20,7 @@ if __name__ == '__main__':
     parser.add_argument('--port', '-p', default='/dev/serial0')
 
     args = parser.parse_args()
-    setup(args.port)
+
+    ser = setup_connection(args.port)
+    print(get_single_measurement(ser))
+    ser.close()
