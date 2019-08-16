@@ -33,6 +33,9 @@ def do_measurement_loop(ser, fn, delay, n_samples, verbose=False, append=False):
 
             f.flush()
 
+            if verbose:
+                print('Done Measuring')
+
             sleep(delay)
 
 if __name__ == '__main__':
