@@ -65,11 +65,18 @@ def _do_parsing(f):
     Zs = np.concatenate(Zs)
     zs = np.concatenate(zs)
 
-    return {'datetime':dts, 'temperature_c': ts, 'temperature_f': ts *9/5 + 32,
+    # compute dewpoint via the Arden Buck equation, w/ constants from https://en.wikipedia.org/wiki/Dew_point#Calculating_the_dew_point
+    B, C, D = 18.678, 257.14, 234.
+    gammam = np.log(hs/100 * np.exp((B - ts/D)*(ts/(C + ts))))
+    dps = C * gammam / (B - gammam)
+
+    return {'datetime':dts,
+            'temperature_c': ts, 'temperature_f': ts *9/5 + 32,
+            'dewpoint_c': dps, 'dewpoint_f': dps *9/5 + 32,
             'humidity': hs, 'co2_ppm_filtered':Zs, 'co2_ppm_raw':zs}
 
 
-def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False):
+def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint=False):
     # import here so that the rest of the module works even if there's no mpl
     from matplotlib import pyplot as plt
 
@@ -83,8 +90,13 @@ def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False):
 
     line1 = ax2.plot(datadct['datetime'], datadct[temperature_name], c=next(ccycle))[0]
     ax2.set_ylabel('temperature [deg {}]'.format ('F' if degf else 'C'), color=line1.get_color())
-    line22 = ax22.plot(datadct['datetime'], datadct['humidity'], c=next(ccycle))[0]
-    ax22.set_ylabel('humidity [%]', color=line22.get_color())
+    if dewpoint:
+        dp = datadct['dewpoint_' + ('f' if degf else 'c')]
+        line22 = ax22.plot(datadct['datetime'], dp, c=next(ccycle))[0]
+        ax22.set_ylabel('dewpoint [deg {}]'.format ('F' if degf else 'C'), color=line22.get_color())
+    else:
+        line22 = ax22.plot(datadct['datetime'], datadct['humidity'], c=next(ccycle))[0]
+        ax22.set_ylabel('humidity [%]', color=line22.get_color())
     # set the side axes color to match the lines
     for line, ax in ((line1, ax2), (line22, ax22)):
         c = line.get_color()
@@ -92,6 +104,13 @@ def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False):
             li.set_color(c)
         for li in ax.yaxis.get_majorticklines():
             li.set_c(c)
+    # match the y-axes if using dewpoints
+    if dewpoint:
+        l2, u2 = ax2.get_ylim()
+        l22, u22 = ax22.get_ylim()
+        l, u = min(l2, l22), max(u2, u22)
+        for ax in ax2, ax22:
+            ax.set_ylim(l, u)
 
     ax1.plot(datadct['datetime'], datadct['co2_ppm_raw'], c=next(ccycle))
     ax1.plot(datadct['datetime'], datadct['co2_ppm_filtered'], c='k')
@@ -124,6 +143,7 @@ if __name__ == '__main__':
     parser.add_argument('input_file', help='file to parse and plot or "-" for stdin')
     parser.add_argument('output_name', nargs='?', help='filename to save the plot to', default=None)
     parser.add_argument('--deg-f', '-f', help='degrees in farenheit instead of celsius', action='store_true')
+    parser.add_argument('--dewpoint', '-d', help='humidity in dewpoint instead of %', action='store_true')
 
     args = parser.parse_args()
 
@@ -132,4 +152,4 @@ if __name__ == '__main__':
     else:
         datadct = parse_cozir_file(args.input_file)
 
-    plot_cozir_data(datadct, outfile=args.output_name, degf=args.deg_f)
+    plot_cozir_data(datadct, outfile=args.output_name, degf=args.deg_f, dewpoint=args.dewpoint)
