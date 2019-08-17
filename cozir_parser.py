@@ -27,29 +27,37 @@ def _parse_lines(datalines, startdt, enddt):
     return dts, hs, ts, Zs, zs
 
 
-def parse_cozir_file(fn):
-    with open(fn, 'r') as f:
-        dts, hs, ts, Zs, zs = (list() for _ in range(5))
+def parse_cozir_file(forfn):
+    if hasattr(forfn, 'read'):
+        # file-like
+        return _do_parsing(forfn)
+    else:
+        with open(forfn, 'r') as f:
+            return _do_parsing(f)
 
-        startdt = enddt = None
-        datalines = []
 
-        for line in f:
-            if line.startswith('dt:'):
-                if startdt is None:
-                    startdt = datetime.strptime(line[3:-1], '%Y-%m-%d %H:%M:%S.%f')
-                else:
-                    enddt = datetime.strptime(line[3:-1], '%Y-%m-%d %H:%M:%S.%f')
-                    dti, hi, ti, Zi, zi = _parse_lines(datalines, startdt, enddt)
-                    dts.append(dti)
-                    hs.append(hi)
-                    ts.append(ti)
-                    Zs.append(Zi)
-                    zs.append(zi)
-                    startdt = enddt = None
-                    datalines = []
+def _do_parsing(f):
+    dts, hs, ts, Zs, zs = (list() for _ in range(5))
+
+    startdt = enddt = None
+    datalines = []
+
+    for line in f:
+        if line.startswith('dt:'):
+            if startdt is None:
+                startdt = datetime.strptime(line[3:-1], '%Y-%m-%d %H:%M:%S.%f')
             else:
-                datalines.append(line)
+                enddt = datetime.strptime(line[3:-1], '%Y-%m-%d %H:%M:%S.%f')
+                dti, hi, ti, Zi, zi = _parse_lines(datalines, startdt, enddt)
+                dts.append(dti)
+                hs.append(hi)
+                ts.append(ti)
+                Zs.append(Zi)
+                zs.append(zi)
+                startdt = enddt = None
+                datalines = []
+        else:
+            datalines.append(line)
 
     dts = np.array(np.concatenate(dts), dtype='datetime64')
     hs = np.concatenate(hs)
@@ -59,6 +67,7 @@ def parse_cozir_file(fn):
 
     return {'datetime':dts, 'temperature_c': ts, 'temperature_f': ts *9/5 + 32,
             'humidity': hs, 'co2_ppm_filtered':Zs, 'co2_ppm_raw':zs}
+
 
 def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False):
     # import here so that the rest of the module works even if there's no mpl
@@ -105,3 +114,22 @@ def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False):
         plt.savefig(outfile)
 
     return fig
+
+
+if __name__ == '__main__':
+    import sys
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('input_file', help='file to parse and plot or "-" for stdin')
+    parser.add_argument('output_name', nargs='?', help='filename to save the plot to', default=None)
+    parser.add_argument('--deg-f', '-f', help='degrees in farenheit instead of celsius', action='store_true')
+
+    args = parser.parse_args()
+
+    if args.input_file == '-':
+        datadct = parse_cozir_file(sys.stdin)
+    else:
+        datadct = parse_cozir_file(args.input_file)
+
+    plot_cozir_data(datadct, outfile=args.output_name, degf=args.deg_f)
