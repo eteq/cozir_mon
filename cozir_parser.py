@@ -64,24 +64,61 @@ def _do_parsing(f):
     ts = np.concatenate(ts)
     Zs = np.concatenate(Zs)
     zs = np.concatenate(zs)
-    dps = temp_rh_to_dewpoint(ts ,hs)
+    dps = hum_rel_to_dewpoint(hs/100, ts)
 
     return {'datetime':dts,
             'temperature_c': ts, 'temperature_f': ts *9/5 + 32,
             'dewpoint_c': dps, 'dewpoint_f': dps *9/5 + 32,
-            'humidity': hs, 'co2_ppm_filtered':Zs, 'co2_ppm_raw':zs}
+            'humidity_rel': hs, 'humidity_abs': hum_rel_to_abs(hs, ts),
+            'co2_ppm_filtered':Zs, 'co2_ppm_raw':zs}
 
 
-def temp_rh_to_dewpoint(ts, hs):
-    # compute dewpoint via the Arden Buck equation, w/ constants from https://en.wikipedia.org/wiki/Dew_point#Calculating_the_dew_point
-    B, C, D = 18.678, 257.14, 234.
-    gammam = np.log(hs/100 * np.exp((B - ts/D)*(ts/(C + ts))))
-    return C * gammam / (B - gammam)
+def hum_rel_to_dewpoint(rh, ts):
+    """
+    temps in celsius, humidity in float (i.e., *not* percent).
+    """
+    # https://www.vaisala.com/sites/default/files/documents/Humidity_Conversion_Formulas_B210973EN-F.pdf
+    C = 2.16679 # gK/J
+
+    # these constants are good to ~.1% from -20 to +50 C
+    A = 6.116441
+    m = 7.591386
+    Tn = 240.7263 # appropriate for outputs in C
+
+    Pw = saturation_vapor_pressure(ts + 273.15) * rh
+
+    return Tn/(m/np.log10(Pw/A) - 1)
 
 
-def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint=False):
+def hum_rel_to_abs(rh, ts):
+    """
+    temp in celsius, humidity in float (i.e., *not* percent). Returns
+    absolute humidity in g/m^3
+    """
+    # https://www.vaisala.com/sites/default/files/documents/Humidity_Conversion_Formulas_B210973EN-F.pdf
+    C = 2.16679 # gK/J
+    ts_K  = ts + 273.15# temp formulae are in Kelvin
+    return C * saturation_vapor_pressure(ts_K) * rh / ts_K
+
+
+def saturation_vapor_pressure(ts_K):
+    Tc = 647.096 # K
+    Pc = 220640 #hPa
+
+    Coeffs = [-7.85951783, 1.84408259, -11.7866497, 22.6807411, -15.9618719, 1.80122502]
+    powers = [1, 1.5, 3, 3.5, 4, 7.5]
+
+    v = 1 - ts_K/Tc
+    lnrp = Tc /ts_K * np.sum([C*v**p for C,p in zip(Coeffs, powers)], axis=0)
+    return Pc * np.exp(lnrp)
+
+
+def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint=False, abshum=False):
     # import here so that the rest of the module works even if there's no mpl
     from matplotlib import pyplot as plt
+
+    if dewpoint and abshum:
+        raise ValueError('cannot ask for both dewpoint and absolute humidity in plot')
 
     temperature_name = 'temperature_' + ('f' if degf else 'c')
 
@@ -98,8 +135,9 @@ def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint
         line22 = ax22.plot(datadct['datetime'], dp, c=next(ccycle))[0]
         ax22.set_ylabel('dewpoint [deg {}]'.format ('F' if degf else 'C'), color=line22.get_color())
     else:
-        line22 = ax22.plot(datadct['datetime'], datadct['humidity'], c=next(ccycle))[0]
-        ax22.set_ylabel('humidity [%]', color=line22.get_color())
+        line22 = ax22.plot(datadct['datetime'], datadct['humidity_'+('abs' if abshum else 'rel')], c=next(ccycle))[0]
+        ax22.set_ylabel('humidity [{}]'.format('$g/m^3$' if abshum else '%'), color=line22.get_color())
+
     # set the side axes color to match the lines
     for line, ax in ((line1, ax2), (line22, ax22)):
         c = line.get_color()
@@ -147,6 +185,7 @@ if __name__ == '__main__':
     parser.add_argument('output_name', nargs='?', help='filename to save the plot to', default=None)
     parser.add_argument('--deg-f', '-f', help='degrees in farenheit instead of celsius', action='store_true')
     parser.add_argument('--dewpoint', '-d', help='humidity in dewpoint instead of %', action='store_true')
+    parser.add_argument('--absolute-humidity', '-a', help='absolute humidity instead of relative', action='store_true')
 
     args = parser.parse_args()
 
@@ -155,4 +194,4 @@ if __name__ == '__main__':
     else:
         datadct = parse_cozir_file(args.input_file)
 
-    plot_cozir_data(datadct, outfile=args.output_name, degf=args.deg_f, dewpoint=args.dewpoint)
+    plot_cozir_data(datadct, outfile=args.output_name, degf=args.deg_f, dewpoint=args.dewpoint, abshum=args.absolute_humidity)
