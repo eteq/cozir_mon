@@ -64,16 +64,19 @@ def _do_parsing(f):
     ts = np.concatenate(ts)
     Zs = np.concatenate(Zs)
     zs = np.concatenate(zs)
-
-    # compute dewpoint via the Arden Buck equation, w/ constants from https://en.wikipedia.org/wiki/Dew_point#Calculating_the_dew_point
-    B, C, D = 18.678, 257.14, 234.
-    gammam = np.log(hs/100 * np.exp((B - ts/D)*(ts/(C + ts))))
-    dps = C * gammam / (B - gammam)
+    dps = temp_rh_to_dewpoint(ts ,hs)
 
     return {'datetime':dts,
             'temperature_c': ts, 'temperature_f': ts *9/5 + 32,
             'dewpoint_c': dps, 'dewpoint_f': dps *9/5 + 32,
             'humidity': hs, 'co2_ppm_filtered':Zs, 'co2_ppm_raw':zs}
+
+
+def temp_rh_to_dewpoint(ts, hs):
+    # compute dewpoint via the Arden Buck equation, w/ constants from https://en.wikipedia.org/wiki/Dew_point#Calculating_the_dew_point
+    B, C, D = 18.678, 257.14, 234.
+    gammam = np.log(hs/100 * np.exp((B - ts/D)*(ts/(C + ts))))
+    return C * gammam / (B - gammam)
 
 
 def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint=False):
