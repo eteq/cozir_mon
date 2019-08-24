@@ -43,9 +43,10 @@ storage.mount(vfs, "/sd")
 
 uart = busio.UART(board.TX, board.RX, baudrate=9600)
 uart.write(b'K 0\r\n')
+time.sleep(.1)
 uart.reset_input_buffer()
 uart.write(b'K 2\r\n')
-assert uart.read(10) == b' K 00002\r\n', 'CozIR not responding normally'
+assert b'K 00002' in uart.read(10), 'CozIR not responding normally'
 
 with open("/sd/co2.log", "wb") as f:
     while True:
