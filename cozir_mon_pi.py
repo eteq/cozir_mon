@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+"""
+A simple monitor script for Cozir-A on raspberry pi.
+"""
+
 from time import sleep
 import serial
 from datetime import datetime
