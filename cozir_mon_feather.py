@@ -92,23 +92,28 @@ if b'K 00000' not in uart.read(10):
 
 def main_loop(f, iters, wait_secs, warm_up_secs, leave_led_on):
     while True:
+        start_loop_time = time.monotonic()
+
         uart.write(b'K 2\r\n')
         time.sleep(warm_up_secs)
-        uart.reset_input_buffer()
 
         print('Starting CO2 read cycle')
         f.write(b'deltat: ' + bytes(bytearray(str(time.monotonic()))) + b'\n')
         for _ in range(iters):
             time.sleep(MEASUREMENT_PERIOD_SECS)
-            uart.write(b'Q\r\n')
-            bs = uart.read(50)
+            bs = None
+            while bs is None:
+                # occasionally this doesn't work...?
+                uart.reset_input_buffer()
+                uart.write(b'Q\r\n')
+                bs = uart.read(50)
             f.write(bs.replace(b'\r\n', b'\n'))
         f.write(b'deltat: ' + bytes(bytearray(str(time.monotonic()))) + b'\n')
         f.flush()
 
         co2_ppm = int(bs.split(b'Z ')[1].split(b' z')[0])
         print('co2 after cycle is:', co2_ppm, 'ppm')
-        rled.value = False
+        rled.value = gled.value = False
         if co2_ppm < 500:
             blink_led(gled, .4, 2, leave_led_on)
         elif co2_ppm < 1000:
@@ -121,8 +126,11 @@ def main_loop(f, iters, wait_secs, warm_up_secs, leave_led_on):
             blink_led(rled, .1, 8, leave_led_on)
 
         uart.write(b'K 0\r\n')  # lower power mode
-        if (wait_secs - warm_up_secs) > 0:
-            time.sleep(wait_secs - warm_up_secs)
+
+        end_loop_time = time.monotonic()
+        sleep_time = wait_secs - (end_loop_time - start_loop_time)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
 
 # now actually do the main loop with a writer determined by the sd card's presence or absence
