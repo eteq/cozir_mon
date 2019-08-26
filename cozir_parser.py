@@ -60,12 +60,13 @@ def _do_parsing(f):
                 startdt = parse_time_line(line)
             else:
                 enddt = parse_time_line(line)
-                dti, hi, ti, Zi, zi = _parse_lines(datalines, startdt, enddt)
-                dts.append(dti)
-                hs.append(hi)
-                ts.append(ti)
-                Zs.append(Zi)
-                zs.append(zi)
+                if datalines:  # ocassionally the measuring fails.
+                    dti, hi, ti, Zi, zi = _parse_lines(datalines, startdt, enddt)
+                    dts.append(dti)
+                    hs.append(hi)
+                    ts.append(ti)
+                    Zs.append(Zi)
+                    zs.append(zi)
                 startdt = enddt = None
                 datalines = []
         else:
