@@ -200,7 +200,7 @@ if __name__ == '__main__':
     parser.add_argument('input_file', help='file to parse and plot or "-" for stdin')
     parser.add_argument('output_name', nargs='?', help='filename to save the plot to', default=None)
     parser.add_argument('--deg-f', '-f', help='degrees in farenheit instead of celsius', action='store_true')
-    parser.add_argument('--dewpoint', '-d', help='humidity in dewpoint instead of %', action='store_true')
+    parser.add_argument('--dewpoint', '-d', help='humidity in dewpoint instead of percent', action='store_true')
     parser.add_argument('--absolute-humidity', '-a', help='absolute humidity instead of relative', action='store_true')
 
     args = parser.parse_args()
