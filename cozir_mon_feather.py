@@ -101,12 +101,12 @@ def main_loop(f, iters, wait_secs, warm_up_secs, leave_led_on):
         f.write(b'deltat: ' + bytes(bytearray(str(time.monotonic()))) + b'\n')
         for _ in range(iters):
             time.sleep(MEASUREMENT_PERIOD_SECS)
-            bs = None
-            while bs is None:
-                # occasionally this doesn't work...?
-                uart.reset_input_buffer()
-                uart.write(b'Q\r\n')
-                bs = uart.read(50)
+            uart.reset_input_buffer()
+            uart.write(b'Q\r\n')
+            bs = uart.read(50)
+            if bs is None:
+                print('No response! aborting this data run')
+                break
             f.write(bs.replace(b'\r\n', b'\n'))
         f.write(b'deltat: ' + bytes(bytearray(str(time.monotonic()))) + b'\n')
         f.flush()
