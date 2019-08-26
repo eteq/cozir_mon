@@ -5,7 +5,8 @@ from datetime import datetime
 
 import numpy as np
 
-__all__ = ['parse_vozir_file', 'plot_cozir_data']
+__all__ = ['parse_cozir_file', 'plot_cozir_data']
+
 
 def _parse_lines(datalines, startdt, enddt):
     dt = (enddt - startdt)/len(datalines)
@@ -38,6 +39,15 @@ def parse_cozir_file(forfn):
             return _do_parsing(f)
 
 
+def parse_time_line(line):
+    if line.startswith('dt:'):
+        return datetime.strptime(line[3:-1], '%Y-%m-%d %H:%M:%S.%f')
+    elif line.startswith('deltat:'):
+        return float(line[7:-1])
+    else:
+        raise ValueError(f'Not a time line: {line}')
+
+
 def _do_parsing(f):
     dts, hs, ts, Zs, zs = (list() for _ in range(5))
 
@@ -45,11 +55,11 @@ def _do_parsing(f):
     datalines = []
 
     for line in f:
-        if line.startswith('dt:'):
+        if line.startswith('d'):
             if startdt is None:
-                startdt = datetime.strptime(line[3:-1], '%Y-%m-%d %H:%M:%S.%f')
+                startdt = parse_time_line(line)
             else:
-                enddt = datetime.strptime(line[3:-1], '%Y-%m-%d %H:%M:%S.%f')
+                enddt = parse_time_line(line)
                 dti, hi, ti, Zi, zi = _parse_lines(datalines, startdt, enddt)
                 dts.append(dti)
                 hs.append(hi)
@@ -61,18 +71,21 @@ def _do_parsing(f):
         else:
             datalines.append(line)
 
-    dts = np.array(np.concatenate(dts), dtype='datetime64')
+    if hasattr(dts[0][0], 'date') and hasattr(dts[0][0], 'time'):
+        dts = np.array(np.concatenate(dts), dtype='datetime64')
+    else:
+        dts = np.array(np.concatenate(dts), dtype=float)
     hs = np.concatenate(hs)
     ts = np.concatenate(ts)
     Zs = np.concatenate(Zs)
     zs = np.concatenate(zs)
     dps = hum_rel_to_dewpoint(hs/100, ts)
 
-    return {'datetime':dts,
-            'temperature_c': ts, 'temperature_f': ts *9/5 + 32,
-            'dewpoint_c': dps, 'dewpoint_f': dps *9/5 + 32,
+    return {'datetime': dts,
+            'temperature_c': ts, 'temperature_f': ts * 9/5 + 32,
+            'dewpoint_c': dps, 'dewpoint_f': dps * 9/5 + 32,
             'humidity_rel': hs, 'humidity_abs': hum_rel_to_abs(hs, ts),
-            'co2_ppm_filtered':Zs, 'co2_ppm_raw':zs}
+            'co2_ppm_filtered': Zs, 'co2_ppm_raw': zs}
 
 
 def hum_rel_to_dewpoint(rh, ts):
@@ -80,12 +93,12 @@ def hum_rel_to_dewpoint(rh, ts):
     temps in celsius, humidity in float (i.e., *not* percent).
     """
     # https://www.vaisala.com/sites/default/files/documents/Humidity_Conversion_Formulas_B210973EN-F.pdf
-    C = 2.16679 # gK/J
+    C = 2.16679  # gK/J
 
     # these constants are good to ~.1% from -20 to +50 C
     A = 6.116441
     m = 7.591386
-    Tn = 240.7263 # appropriate for outputs in C
+    Tn = 240.7263  # appropriate for outputs in C
 
     Pw = saturation_vapor_pressure(ts + 273.15) * rh
 
@@ -98,20 +111,20 @@ def hum_rel_to_abs(rh, ts):
     absolute humidity in g/m^3
     """
     # https://www.vaisala.com/sites/default/files/documents/Humidity_Conversion_Formulas_B210973EN-F.pdf
-    C = 2.16679 # gK/J
-    ts_K  = ts + 273.15# temp formulae are in Kelvin
+    C = 2.16679  # gK/J
+    ts_K = ts + 273.15  # temp formulae are in Kelvin
     return C * saturation_vapor_pressure(ts_K) * rh / ts_K
 
 
 def saturation_vapor_pressure(ts_K):
-    Tc = 647.096 # K
-    Pc = 220640 #hPa
+    Tc = 647.096  # K
+    Pc = 220640  # hPa
 
     Coeffs = [-7.85951783, 1.84408259, -11.7866497, 22.6807411, -15.9618719, 1.80122502]
     powers = [1, 1.5, 3, 3.5, 4, 7.5]
 
     v = 1 - ts_K/Tc
-    lnrp = Tc /ts_K * np.sum([C*v**p for C,p in zip(Coeffs, powers)], axis=0)
+    lnrp = Tc / ts_K * np.sum([C*v**p for C,p in zip(Coeffs, powers)], axis=0)
     return Pc * np.exp(lnrp)
 
 
@@ -131,11 +144,11 @@ def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint
     ax22 = ax2.twinx()
 
     line1 = ax2.plot(datadct['datetime'], datadct[temperature_name], c=next(ccycle))[0]
-    ax2.set_ylabel('temperature [deg {}]'.format ('F' if degf else 'C'), color=line1.get_color())
+    ax2.set_ylabel('temperature [deg {}]'.format('F' if degf else 'C'), color=line1.get_color())
     if dewpoint:
         dp = datadct['dewpoint_' + ('f' if degf else 'c')]
         line22 = ax22.plot(datadct['datetime'], dp, c=next(ccycle))[0]
-        ax22.set_ylabel('dewpoint [deg {}]'.format ('F' if degf else 'C'), color=line22.get_color())
+        ax22.set_ylabel('dewpoint [deg {}]'.format('F' if degf else 'C'), color=line22.get_color())
     else:
         line22 = ax22.plot(datadct['datetime'], datadct['humidity_'+('abs' if abshum else 'rel')], c=next(ccycle))[0]
         ax22.set_ylabel('humidity [{}]'.format('$g/m^3$' if abshum else '%'), color=line22.get_color())
