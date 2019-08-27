@@ -111,19 +111,20 @@ def main_loop(f, iters, wait_secs, warm_up_secs, leave_led_on):
         f.write(b'deltat: ' + bytes(bytearray(str(time.monotonic()))) + b'\n')
         f.flush()
 
-        co2_ppm = int(bs.split(b'Z ')[1].split(b' z')[0])
-        print('co2 after cycle is:', co2_ppm, 'ppm')
-        rled.value = gled.value = False
-        if co2_ppm < 500:
-            blink_led(gled, .4, 2, leave_led_on)
-        elif co2_ppm < 1000:
-            blink_led(gled, .2, 4, leave_led_on)
-        elif co2_ppm < 1500:
-            blink_led(rled, .4, 2, leave_led_on)
-        elif co2_ppm < 2000:
-            blink_led(rled, .2, 4, leave_led_on)
-        if co2_ppm >= 2000:
-            blink_led(rled, .1, 8, leave_led_on)
+        if bs is not None:
+            co2_ppm = int(bs.split(b'Z ')[1].split(b' z')[0])
+            print('co2 after cycle is:', co2_ppm, 'ppm')
+            rled.value = gled.value = False
+            if co2_ppm < 500:
+                blink_led(gled, .4, 2, leave_led_on)
+            elif co2_ppm < 1000:
+                blink_led(gled, .2, 4, leave_led_on)
+            elif co2_ppm < 1500:
+                blink_led(rled, .4, 2, leave_led_on)
+            elif co2_ppm < 2000:
+                blink_led(rled, .2, 4, leave_led_on)
+            if co2_ppm >= 2000:
+                blink_led(rled, .1, 8, leave_led_on)
 
         uart.write(b'K 0\r\n')  # lower power mode
 
