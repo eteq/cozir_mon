@@ -5,7 +5,6 @@ import os
 import board
 import busio
 import digitalio
-import adafruit_sgp30
 import adafruit_sdcard
 import storage
 import time
@@ -43,6 +42,10 @@ def blink_led(led, timesec, n=1, endstate=False):
         time.sleep(timesec)
         led.value = False
     led.value = endstate
+
+
+def from_bcd(b):  # from BCD to binary
+    return b - 6 * (b >> 4)
 
 
 # default from-start-up-time
@@ -104,12 +107,16 @@ except Exception as e:
 
 sgp30 = None
 if i2cok:
-    # set up the SGP30
-    sgp30 = adafruit_sgp30.Adafruit_SGP30(i2c)
-    print("SGP30 found - serial #", [hex(i) for i in sgp30.serial])
-    sgp30.iaq_init()
-    sgp30.set_iaq_baseline(0x8973, 0x8aae)
-    test_measurement = sgp30.eCO2, sgp30.TVOC
+    try:
+        import adafruit_sgp30
+        # set up the SGP30
+        sgp30 = adafruit_sgp30.Adafruit_SGP30(i2c)
+        print("SGP30 found - serial #", [hex(i) for i in sgp30.serial])
+        sgp30.iaq_init()
+        sgp30.set_iaq_baseline(0x8973, 0x8aae)
+        test_measurement = sgp30.eCO2, sgp30.TVOC
+    except ImportError:
+        print('adafruit_sgp30 not present.  Skipping sgp30 setup')
 
 # set up RTC
 if i2cok:
@@ -122,28 +129,17 @@ if i2cok:
         i2c.readfrom_into(RTC_ADDR, b)
         i2c.unlock()
         return b
-    def rtc_write(addr, bytestowrite):
-        b = bytearray(len(bytestowrite) + 1)
-        b[1:] = bytestowrite
-        b[0] = addr
-        while not i2c.try_lock():
-            pass
-        i2c.writeto(RTC_ADDR, b)
-        i2c.unlock()
     try:
         status_register = rtc_read(0x0f)[0]
         if status_register & 0b10000000:
             print('RTC may be inaccurate...')
         # this will make it actually happen
         def get_time_byte():
+            # assumes 24 hour time is set
             sec, min, hr, day, date, mon, yr = rtc_read(0, 7)
-            def byte_to_num(b, skip6=False):
-                ones = int(0b1111 & b)
-                tens = int((b >> 4) & (0b11 if skip6 else 0b111))
-                return ones + tens*10
-            return bytearray('dt:20{:02}-{:02}-{:02} {}:{}:{}.0'.format(byte_to_num(yr),
-                   byte_to_num(mon), byte_to_num(date), byte_to_num(hr, True),
-                   byte_to_num(min), byte_to_num(sec)))
+            return bytearray('dt:20{:02}-{:02}-{:02} {}:{}:{}.0'.format(from_bcd(yr),
+                   from_bcd(mon&0b11111), from_bcd(date), from_bcd(hr&0b111111),
+                   from_bcd(min), from_bcd(sec)))
     except Exception as e:
         print('RTC did not initialize: ' + str(e))
         raise
