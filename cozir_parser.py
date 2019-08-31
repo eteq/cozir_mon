@@ -16,18 +16,28 @@ def _parse_lines(datalines, startdt, enddt):
     ts = []
     Zs = []
     zs = []
+
+    sgpdts = []
+    eco2s = []
+    tvocs = []
     currdt = startdt + dt/2
     for line in datalines:
-        match = re.match(r' H (\d*) T (\d*) Z (\d*) z (\d*)\n', line)
-        grps = match.groups()
-        dts.append(currdt)
-        hs.append(int(grps[0])/10)
-        ts.append((int(grps[1])-1000)/10)
-        Zs.append(float(grps[2]))
-        zs.append(float(grps[3]))
+        if line.startswith(' eCO2:'):
+            eco2, tvoc = line.split(' ')[1:]
+            eco2s.append(int(eco2[5:]))
+            tvocs.append(int(tvoc[5:]))
+            sgpdts.append(enddt)
+        else:
+            match = re.match(r' H (\d*) T (\d*) Z (\d*) z (\d*)\n', line)
+            grps = match.groups()
+            dts.append(currdt)
+            hs.append(int(grps[0])/10)
+            ts.append((int(grps[1])-1000)/10)
+            Zs.append(float(grps[2]))
+            zs.append(float(grps[3]))
 
         currdt = currdt + dt
-    return dts, hs, ts, Zs, zs
+    return dts, hs, ts, Zs, zs, sgpdts, eco2s, tvocs
 
 
 def parse_cozir_file(forfn):
@@ -49,44 +59,54 @@ def parse_time_line(line):
 
 
 def _do_parsing(f):
-    dts, hs, ts, Zs, zs = (list() for _ in range(5))
+    dts, hs, ts, Zs, zs, sgpdts, eco2s, tvocs = (list() for _ in range(8))
 
+    header = True
     startdt = enddt = None
     datalines = []
 
     for line in f:
         if line.startswith('d'):
+            header = False
             if startdt is None:
                 startdt = parse_time_line(line)
             else:
                 enddt = parse_time_line(line)
                 if datalines:  # ocassionally the measuring fails.
-                    dti, hi, ti, Zi, zi = _parse_lines(datalines, startdt, enddt)
+                    dti, hi, ti, Zi, zi, sgpdt, eco2, tvoc = _parse_lines(datalines, startdt, enddt)
                     dts.append(dti)
                     hs.append(hi)
                     ts.append(ti)
                     Zs.append(Zi)
                     zs.append(zi)
+                    sgpdts.append(sgpdt)
+                    eco2s.append(eco2)
+                    tvocs.append(tvoc)
                 startdt = enddt = None
                 datalines = []
-        else:
+        elif not header:
             datalines.append(line)
 
     if hasattr(dts[0][0], 'date') and hasattr(dts[0][0], 'time'):
         dts = np.array(np.concatenate(dts), dtype='datetime64')
+        sgpdts = np.array(np.concatenate(sgpdts), dtype='datetime64')
     else:
         dts = np.array(np.concatenate(dts), dtype=float)
+        sgpdts = np.array(np.concatenate(sgpdts), dtype=float)
     hs = np.concatenate(hs)
     ts = np.concatenate(ts)
     Zs = np.concatenate(Zs)
     zs = np.concatenate(zs)
+    eco2s = np.concatenate(eco2s)
+    tvocs = np.concatenate(tvocs)
     dps = hum_rel_to_dewpoint(hs/100, ts)
 
     return {'datetime': dts,
             'temperature_c': ts, 'temperature_f': ts * 9/5 + 32,
             'dewpoint_c': dps, 'dewpoint_f': dps * 9/5 + 32,
             'humidity_rel': hs, 'humidity_abs': hum_rel_to_abs(hs, ts),
-            'co2_ppm_filtered': Zs, 'co2_ppm_raw': zs}
+            'co2_ppm_filtered': Zs, 'co2_ppm_raw': zs,
+            'datetime_eco2tvoc': sgpdts, 'eCO2': eco2s, 'TVOC': tvocs}
 
 
 def hum_rel_to_dewpoint(rh, ts):
@@ -129,12 +149,16 @@ def saturation_vapor_pressure(ts_K):
     return Pc * np.exp(lnrp)
 
 
-def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint=False, abshum=False):
+def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint=False, abshum=False, minutes=False):
     # import here so that the rest of the module works even if there's no mpl
     from matplotlib import pyplot as plt
 
     if dewpoint and abshum:
         raise ValueError('cannot ask for both dewpoint and absolute humidity in plot')
+
+    if minutes:
+        datadct = datadct.copy()
+        datadct['datetime'] = datadct['datetime']/60
 
     temperature_name = 'temperature_' + ('f' if degf else 'c')
 
@@ -171,6 +195,18 @@ def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint
 
     ax1.plot(datadct['datetime'], datadct['co2_ppm_raw'], c=next(ccycle))
     ax1.plot(datadct['datetime'], datadct['co2_ppm_filtered'], c='k')
+    if len(datadct['datetime_eco2tvoc']) > 0:
+        line1 = ax1.plot(datadct['datetime_eco2tvoc'], datadct['eCO2'], c='k', ls='--')[0]
+        ax12 = ax1.twinx()
+        line12 = ax12.plot(datadct['datetime_eco2tvoc'], datadct['TVOC'], c=next(ccycle))[0]
+        ax12.set_ylabel('TVOCs [ppm]', color=line12.get_color())
+        # set the right axes color to match the lines
+        for line, ax in ((line12, ax12),):
+            c = line.get_color()
+            for li in ax.yaxis.get_majorticklabels():
+                li.set_color(c)
+            for li in ax.yaxis.get_majorticklines():
+                li.set_c(c)
     ax1.set_ylabel('co2 concentration [ppm]')
 
     # these threshold values come from https://dash.harvard.edu/bitstream/handle/1/27662232/4892924.pdf
@@ -202,6 +238,7 @@ if __name__ == '__main__':
     parser.add_argument('--deg-f', '-f', help='degrees in farenheit instead of celsius', action='store_true')
     parser.add_argument('--dewpoint', '-d', help='humidity in dewpoint instead of percent', action='store_true')
     parser.add_argument('--absolute-humidity', '-a', help='absolute humidity instead of relative', action='store_true')
+    parser.add_argument('--minutes', '-m', help='delta-t in minutes instead of seconds', action='store_true')
 
     args = parser.parse_args()
 
@@ -210,4 +247,6 @@ if __name__ == '__main__':
     else:
         datadct = parse_cozir_file(args.input_file)
 
-    plot_cozir_data(datadct, outfile=args.output_name, degf=args.deg_f, dewpoint=args.dewpoint, abshum=args.absolute_humidity)
+    plot_cozir_data(datadct, outfile=args.output_name, degf=args.deg_f,
+                    dewpoint=args.dewpoint, abshum=args.absolute_humidity,
+                    minutes=args.minutes)
