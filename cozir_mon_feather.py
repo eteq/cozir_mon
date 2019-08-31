@@ -5,6 +5,7 @@ import os
 import board
 import busio
 import digitalio
+import adafruit_sgp30
 import adafruit_sdcard
 import storage
 import time
@@ -43,6 +44,10 @@ def blink_led(led, timesec, n=1, endstate=False):
         led.value = False
     led.value = endstate
 
+
+# default from-start-up-time
+def get_time_byte():
+    return b'deltat: ' + bytes(bytearray(str(time.monotonic())))
 
 # Try to connect to the card and mount the filesystem.
 # Apply user settings depending on whether this fails or not.
@@ -89,8 +94,67 @@ if b'K 00000' not in uart.read(10):
         blink_led(gled, .025, 1)
     raise IOError('CozIR not responding normally')
 
+#I2C thingies
+i2cok = False
+try:
+    i2c = busio.I2C(board.SCL, board.SDA, frequency=100000)
+    i2cok = True
+except Exception as e:
+    print('I2C did not initialize!: ' + str(e))
+
+sgp30 = None
+if i2cok:
+    # set up the SGP30
+    sgp30 = adafruit_sgp30.Adafruit_SGP30(i2c)
+    print("SGP30 found - serial #", [hex(i) for i in sgp30.serial])
+    sgp30.iaq_init()
+    sgp30.set_iaq_baseline(0x8973, 0x8aae)
+    test_measurement = sgp30.eCO2, sgp30.TVOC
+
+# set up RTC
+if i2cok:
+    RTC_ADDR = 0x68
+    def rtc_read(addr, nbytes=1):
+        while not i2c.try_lock():
+            pass
+        b = bytearray(nbytes)
+        i2c.writeto(RTC_ADDR, bytearray([addr]), stop=False)
+        i2c.readfrom_into(RTC_ADDR, b)
+        i2c.unlock()
+        return b
+    def rtc_write(addr, bytestowrite):
+        b = bytearray(len(bytestowrite) + 1)
+        b[1:] = bytestowrite
+        b[0] = addr
+        while not i2c.try_lock():
+            pass
+        i2c.writeto(RTC_ADDR, b)
+        i2c.unlock()
+    try:
+        status_register = rtc_read(0x0f)[0]
+        if status_register & 0b10000000:
+            print('RTC may be inaccurate...')
+        # this will make it actually happen
+        def get_time_byte():
+            sec, min, hr, day, date, mon, yr = rtc_read(0, 7)
+            def byte_to_num(b, skip6=False):
+                ones = int(0b1111 & b)
+                tens = int((b >> 4) & (0b11 if skip6 else 0b111))
+                return ones + tens*10
+            return bytearray('dt:20{:02}-{:02}-{:02} {}:{}:{}.0'.format(byte_to_num(yr),
+                   byte_to_num(mon), byte_to_num(date), byte_to_num(hr, True),
+                   byte_to_num(min), byte_to_num(sec)))
+    except Exception as e:
+        print('RTC did not initialize: ' + str(e))
+        raise
+
 
 def main_loop(f, iters, wait_secs, warm_up_secs, leave_led_on):
+    if sgp30 is not None:
+        f.write(bytearray('eCO2 baseline:{}, '
+                'TVOC baseline:{}\n'.format(sgp30.baseline_eCO2,
+                                            sgp30.baseline_TVOC)))
+
     while True:
         start_loop_time = time.monotonic()
 
@@ -98,7 +162,7 @@ def main_loop(f, iters, wait_secs, warm_up_secs, leave_led_on):
         time.sleep(warm_up_secs)
 
         print('Starting CO2 read cycle')
-        f.write(b'deltat: ' + bytes(bytearray(str(time.monotonic()))) + b'\n')
+        f.write(get_time_byte() + b'\n')
         for _ in range(iters):
             time.sleep(MEASUREMENT_PERIOD_SECS)
             uart.reset_input_buffer()
@@ -108,7 +172,9 @@ def main_loop(f, iters, wait_secs, warm_up_secs, leave_led_on):
                 print('No response! aborting this data run')
                 break
             f.write(bs.replace(b'\r\n', b'\n'))
-        f.write(b'deltat: ' + bytes(bytearray(str(time.monotonic()))) + b'\n')
+        if sgp30 is not None:
+            f.write(bytearray(' eCO2:{} TVOC:{}\n'.format(sgp30.eCO2, sgp30.TVOC)))
+        f.write(get_time_byte() + b'\n')
         f.flush()
 
         if bs is not None:
