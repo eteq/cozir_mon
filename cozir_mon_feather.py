@@ -8,6 +8,7 @@ import digitalio
 import adafruit_sdcard
 import storage
 import time
+from battery_check_feather import get_battery_voltage
 
 
 sd_iters = 9  # times to record measurements if there's an SD card
@@ -173,6 +174,9 @@ def main_loop(f, iters, wait_secs, warm_up_secs, leave_led_on):
                 time.sleep(1)  # 1Hz aq makes the baseline correction good according to datasheet
             eco2, tvoc = sgp30.iaq_measure()
             f.write(bytearray(' eCO2:{} TVOC:{}\n'.format(eco2, tvoc)))
+        f.write(b'battery V:' + bytearray('{:.5f}'.format(get_battery_voltage())) + b'\n')
+        print('battery voltage:', '{:.5f}'.format(get_battery_voltage()))
+
         f.write(get_time_byte() + b'\n')
         f.flush()
 
