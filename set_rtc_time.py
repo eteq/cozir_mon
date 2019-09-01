@@ -25,7 +25,7 @@ def rtc_read(i2c, addr, nbytes=1):
 
 def rtc_write(i2c, addr, bytestowrite):
     b = bytearray(len(bytestowrite) + 1)
-    b[1:] = bytestowrite
+    b[1:] = bytearray(bytestowrite)
     b[0] = addr
     while not i2c.try_lock():
         pass
@@ -66,4 +66,5 @@ def set_time(i2c, yr, mon, date, day, hr, min, sec):
     min_bcd = to_bcd(min) & 0b1111111
     sec_bcd = to_bcd(sec) & 0b1111111
 
-    sec_bcd, min_bcd, hr_bcd, day_bcd, date_bcd, mon_bcd, yr_bcd
+    to_write = [sec_bcd, min_bcd, hr_bcd, day_bcd, date_bcd, mon_bcd, yr_bcd]
+    rtc_write(i2c, 0, to_write)
