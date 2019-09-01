@@ -24,6 +24,7 @@ if 'user_settings.py' in os.listdir('.'):
 # constants according to http://www.co2meters.com/Documentation/Manuals/Manual-GSS-Sensors.pdf
 MEASUREMENT_PERIOD_SECS = .02
 FILTER_TO_WARM_UP_SECS = {1:1.2, 2:3, 4:5, 8:9, 16:16, 32:32}
+SGP_ITERS = 3
 
 
 gled = digitalio.DigitalInOut(board.GREEN_LED)
@@ -112,9 +113,7 @@ if i2cok:
         # set up the SGP30
         sgp30 = adafruit_sgp30.Adafruit_SGP30(i2c)
         print("SGP30 found - serial #", [hex(i) for i in sgp30.serial])
-        sgp30.iaq_init()
-        sgp30.set_iaq_baseline(0x8973, 0x8aae)
-        test_measurement = sgp30.eCO2, sgp30.TVOC
+        test_measurements = sgp30.eCO2, sgp30.TVOC
     except ImportError:
         print('adafruit_sgp30 not present.  Skipping sgp30 setup')
 
@@ -169,7 +168,11 @@ def main_loop(f, iters, wait_secs, warm_up_secs, leave_led_on):
                 break
             f.write(bs.replace(b'\r\n', b'\n'))
         if sgp30 is not None:
-            f.write(bytearray(' eCO2:{} TVOC:{}\n'.format(sgp30.eCO2, sgp30.TVOC)))
+            for _ in range(SGP_ITERS):
+                sgp30.iaq_measure()
+                time.sleep(1)  # 1Hz aq makes the baseline correction good according to datasheet
+            eco2, tvoc = sgp30.iaq_measure()
+            f.write(bytearray(' eCO2:{} TVOC:{}\n'.format(eco2, tvoc)))
         f.write(get_time_byte() + b'\n')
         f.flush()
 
