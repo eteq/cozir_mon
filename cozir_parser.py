@@ -20,6 +20,8 @@ def _parse_lines(datalines, startdt, enddt):
     sgpdts = []
     eco2s = []
     tvocs = []
+    batvs = []
+
     currdt = startdt + dt/2
     for line in datalines:
         if line.startswith(' eCO2:'):
@@ -27,6 +29,8 @@ def _parse_lines(datalines, startdt, enddt):
             eco2s.append(int(eco2[5:]))
             tvocs.append(int(tvoc[5:]))
             sgpdts.append(enddt)
+        elif line.startswith('battery V:'):
+            batvs.append(float(line.split(':')[-1].strip()))
         else:
             match = re.match(r' H (\d*) T (\d*) Z (\d*) z (\d*)\n', line)
             grps = match.groups()
@@ -37,7 +41,7 @@ def _parse_lines(datalines, startdt, enddt):
             zs.append(float(grps[3]))
 
         currdt = currdt + dt
-    return dts, hs, ts, Zs, zs, sgpdts, eco2s, tvocs
+    return dts, hs, ts, Zs, zs, sgpdts, eco2s, tvocs, batvs
 
 
 def parse_cozir_file(forfn):
@@ -59,7 +63,7 @@ def parse_time_line(line):
 
 
 def _do_parsing(f):
-    dts, hs, ts, Zs, zs, sgpdts, eco2s, tvocs = (list() for _ in range(8))
+    dts, hs, ts, Zs, zs, sgpdts, eco2s, tvocs, batvs = (list() for _ in range(9))
 
     header = True
     startdt = enddt = None
@@ -73,7 +77,7 @@ def _do_parsing(f):
             else:
                 enddt = parse_time_line(line)
                 if datalines:  # ocassionally the measuring fails.
-                    dti, hi, ti, Zi, zi, sgpdt, eco2, tvoc = _parse_lines(datalines, startdt, enddt)
+                    dti, hi, ti, Zi, zi, sgpdt, eco2, tvoc, batv = _parse_lines(datalines, startdt, enddt)
                     dts.append(dti)
                     hs.append(hi)
                     ts.append(ti)
@@ -82,6 +86,7 @@ def _do_parsing(f):
                     sgpdts.append(sgpdt)
                     eco2s.append(eco2)
                     tvocs.append(tvoc)
+                    batvs.append(batv)
                 startdt = enddt = None
                 datalines = []
         elif not header:
@@ -105,8 +110,8 @@ def _do_parsing(f):
             'temperature_c': ts, 'temperature_f': ts * 9/5 + 32,
             'dewpoint_c': dps, 'dewpoint_f': dps * 9/5 + 32,
             'humidity_rel': hs, 'humidity_abs': hum_rel_to_abs(hs, ts),
-            'co2_ppm_filtered': Zs, 'co2_ppm_raw': zs,
-            'datetime_eco2tvoc': sgpdts, 'eCO2': eco2s, 'TVOC': tvocs}
+            'co2_ppm_filtered': Zs, 'co2_ppm_raw': zs, 'battery_voltage':batvs,
+            'datetime_single': sgpdts, 'eCO2': eco2s, 'TVOC': tvocs}
 
 
 def hum_rel_to_dewpoint(rh, ts):
@@ -149,7 +154,8 @@ def saturation_vapor_pressure(ts_K):
     return Pc * np.exp(lnrp)
 
 
-def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint=False, abshum=False, minutes=False):
+def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False,
+                    dewpoint=False, abshum=False, minutes=False, battery=False):
     # import here so that the rest of the module works even if there's no mpl
     from matplotlib import pyplot as plt
 
@@ -168,8 +174,8 @@ def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint
     ax1, ax2 = axs
     ax22 = ax2.twinx()
 
-    line1 = ax2.plot(datadct['datetime'], datadct[temperature_name], c=next(ccycle))[0]
-    ax2.set_ylabel('temperature [deg {}]'.format('F' if degf else 'C'), color=line1.get_color())
+    line2 = ax2.plot(datadct['datetime'], datadct[temperature_name], c=next(ccycle))[0]
+    ax2.set_ylabel('temperature [deg {}]'.format('F' if degf else 'C'), color=line2.get_color())
     if dewpoint:
         dp = datadct['dewpoint_' + ('f' if degf else 'c')]
         line22 = ax22.plot(datadct['datetime'], dp, c=next(ccycle))[0]
@@ -179,7 +185,7 @@ def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint
         ax22.set_ylabel('humidity [{}]'.format('$g/m^3$' if abshum else '%'), color=line22.get_color())
 
     # set the side axes color to match the lines
-    for line, ax in ((line1, ax2), (line22, ax22)):
+    for line, ax in ((line2, ax2), (line22, ax22)):
         c = line.get_color()
         for li in ax.yaxis.get_majorticklabels():
             li.set_color(c)
@@ -195,10 +201,10 @@ def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint
 
     ax1.plot(datadct['datetime'], datadct['co2_ppm_raw'], c=next(ccycle))
     ax1.plot(datadct['datetime'], datadct['co2_ppm_filtered'], c='k')
-    if len(datadct['datetime_eco2tvoc']) > 0:
-        line1 = ax1.plot(datadct['datetime_eco2tvoc'], datadct['eCO2'], c='k', ls='--')[0]
+    if len(datadct['datetime_single']) > 0:
+        line1 = ax1.plot(datadct['datetime_single'], datadct['eCO2'], c='k', ls='--')[0]
         ax12 = ax1.twinx()
-        line12 = ax12.plot(datadct['datetime_eco2tvoc'], datadct['TVOC'], c=next(ccycle))[0]
+        line12 = ax12.plot(datadct['datetime_single'], datadct['TVOC'], c=next(ccycle))[0]
         ax12.set_ylabel('TVOCs [ppm]', color=line12.get_color())
         # set the right axes color to match the lines
         for line, ax in ((line12, ax12),):
@@ -215,10 +221,17 @@ def plot_cozir_data(datadct, outfile=None, figsize=(12, 8), degf=False, dewpoint
     ax1.axhline(1500, c='orange', ls='-.', lw=1)
     ax1.axhline(2000, c='r', ls='--', lw=1)
 
+    if battery:
+        ax2.cla()
+        ax22.cla()
+        ax2.plot(datadct['datetime_single'], datadct['battery_voltage'], color=line2.get_color())
+        ax2.set_ylabel('Battery voltage')
+
     # have the date axes be legible
     for ax in (ax1, ax2):
         for l in ax.xaxis.get_majorticklabels():
             l.set_rotation(45)
+
 
     fig.tight_layout()
 
@@ -239,6 +252,7 @@ if __name__ == '__main__':
     parser.add_argument('--dewpoint', '-d', help='humidity in dewpoint instead of percent', action='store_true')
     parser.add_argument('--absolute-humidity', '-a', help='absolute humidity instead of relative', action='store_true')
     parser.add_argument('--minutes', '-m', help='delta-t in minutes instead of seconds', action='store_true')
+    parser.add_argument('--battery', '-b', help='plot battery voltage instead of env conditions', action='store_true')
 
     args = parser.parse_args()
 
@@ -249,4 +263,4 @@ if __name__ == '__main__':
 
     plot_cozir_data(datadct, outfile=args.output_name, degf=args.deg_f,
                     dewpoint=args.dewpoint, abshum=args.absolute_humidity,
-                    minutes=args.minutes)
+                    minutes=args.minutes, battery=args.battery)
