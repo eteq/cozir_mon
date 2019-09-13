@@ -1,7 +1,6 @@
 import board
 import busio
 
-
 def from_bcd(b):  # from BCD to binary
     return b - 6 * (b >> 4)
 
@@ -54,7 +53,7 @@ def check_time(i2c):
            from_bcd(min), from_bcd(sec), from_bcd(day))
 
 
-def set_time(i2c, yr, mon, date, day, hr, min, sec):
+def set_time(i2c, yr, mon, date, day, hr, min, sec, reset_osf=True):
     """
     day is 1-7 w/ Mon as 1
     """
@@ -68,3 +67,8 @@ def set_time(i2c, yr, mon, date, day, hr, min, sec):
 
     to_write = [sec_bcd, min_bcd, hr_bcd, day_bcd, date_bcd, mon_bcd, yr_bcd]
     rtc_write(i2c, 0, to_write)
+
+    if reset_osf:
+        status_reg = rtc_read(i2c, 0x0f)[0]
+        toset = status_reg & 0b01111111  # reset osf bit to 0
+        rtc_write(i2c, 0x0f, bytearray([toset]))
