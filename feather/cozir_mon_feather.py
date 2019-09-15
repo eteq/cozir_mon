@@ -3,29 +3,25 @@ A monitor script for Cozir-A on an adafruit adalogger
 """
 import os
 import board
-import busio
 import digitalio
-import adafruit_sdcard
-import storage
-import time
-from battery_check_feather import get_battery_voltage
-
-
-sd_iters = 9  # times to record measurements if there's an SD card
-sd_wait_secs = 90  # time between measurement cycles if there's an SD card
-sd_filter = 32  # digital filter (~time scale) setting if there's an SD card
-no_sd_wait_secs = 15  # time between measurement cycles if there's no SD card
-no_sd_filter = 4  # digital filter (~time scale) setting if there's no SD card
-leave_led_on = None  # None means decide depending on sd (False) or not (True)
-# user settings - usually these would override the above
-if 'user_settings.py' in os.listdir('.'):
-    with open('./user_settings.py') as fr:
-        exec(fr.read())
 
 # constants according to http://www.co2meters.com/Documentation/Manuals/Manual-GSS-Sensors.pdf
 MEASUREMENT_PERIOD_SECS = .02
 FILTER_TO_WARM_UP_SECS = {1:1.2, 2:3, 4:5, 8:9, 16:16, 32:32}
 SGP_ITERS = 3
+
+
+def setup_i2c():
+    return busio.I2C(board.SCL, board.SDA, frequency=100000)
+
+
+
+
+
+# user settings - usually these would override the above
+if 'user_settings.py' in os.listdir('.'):
+    with open('./user_settings.py') as fr:
+        exec(fr.read())
 
 
 gled = digitalio.DigitalInOut(board.GREEN_LED)
@@ -34,7 +30,6 @@ gled.value = False
 rled = digitalio.DigitalInOut(board.RED_LED)
 rled.direction = digitalio.Direction.OUTPUT
 rled.value = False
-
 
 def blink_led(led, timesec, n=1, endstate=False):
     for i in range(n):
@@ -46,9 +41,27 @@ def blink_led(led, timesec, n=1, endstate=False):
     led.value = endstate
 
 
+# import busio
+# import adafruit_sdcard
+# import storage
+# import time
+# from battery_check_feather import get_battery_voltage
+
+
+sd_iters = 9  # times to record measurements if there's an SD card
+sd_wait_secs = 90  # time between measurement cycles if there's an SD card
+sd_filter = 32  # digital filter (~time scale) setting if there's an SD card
+no_sd_wait_secs = 15  # time between measurement cycles if there's no SD card
+no_sd_filter = 4  # digital filter (~time scale) setting if there's no SD card
+leave_led_on = None  # None means decide depending on sd (False) or not (True)
+
+
+
+
+
+
 def from_bcd(b):  # from BCD to binary
     return b - 6 * (b >> 4)
-
 
 # default from-start-up-time
 def get_time_byte():

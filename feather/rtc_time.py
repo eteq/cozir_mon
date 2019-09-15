@@ -33,17 +33,11 @@ def rtc_write(i2c, addr, bytestowrite):
     finally:
         i2c.unlock()
 
-
-def setup_i2c():
-    return busio.I2C(board.SCL, board.SDA, frequency=100000)
-
-
 def setup_rtc(i2c):
     status_register = rtc_read(i2c, 0x0f)[0]
     if status_register & 0b10000000:
-        print('Status bit set, so RTC may not have kept time well. Resetting.')
-    rtc_write(i2c, 0x0f, [0])
-
+        print('Status bit set, so RTC may not have kept time well. Set time '
+              'again with reset_osf=True to reset.')
 
 def check_time(i2c):
     # assumes 24 hour time is set
@@ -72,3 +66,15 @@ def set_time(i2c, yr, mon, date, day, hr, min, sec, reset_osf=True):
         status_reg = rtc_read(i2c, 0x0f)[0]
         toset = status_reg & 0b01111111  # reset osf bit to 0
         rtc_write(i2c, 0x0f, bytearray([toset]))
+
+def get_time(i2c):
+    """
+    returns yr, mon, day, hr, min, sec
+    """
+    # assumes 24 hour time is set
+    sec, min, hr, day, date, mon, yr = rtc_read(i2c, 0, 7)
+    return from_bcd(yr), from_bcd(mon&0b11111), from_bcd(date), from_bcd(hr&0b111111), from_bcd(min), from_bcd(sec)
+
+def get_time_bytearray(i2c):
+    yr, mon, day, hr, min, sec = get_time(i2c)
+    return bytearray('dt:20{yr:02}-{mon:02}-{day:02} {hr}:{min}:{sec}.0'.format(**locals())
