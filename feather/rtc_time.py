@@ -1,6 +1,7 @@
 import board
 import busio
 
+
 def from_bcd(b):  # from BCD to binary
     return b - 6 * (b >> 4)
 
@@ -10,6 +11,7 @@ def to_bcd(n):  # from binary to BCD
 
 
 RTC_ADDR = 0x68  # for DS4323
+
 
 def rtc_read(i2c, addr, nbytes=1):
     b = bytearray(nbytes)
@@ -22,6 +24,7 @@ def rtc_read(i2c, addr, nbytes=1):
     finally:
         i2c.unlock()
 
+
 def rtc_write(i2c, addr, bytestowrite):
     b = bytearray(len(bytestowrite) + 1)
     b[1:] = bytearray(bytestowrite)
@@ -33,11 +36,13 @@ def rtc_write(i2c, addr, bytestowrite):
     finally:
         i2c.unlock()
 
+
 def setup_rtc(i2c):
     status_register = rtc_read(i2c, 0x0f)[0]
     if status_register & 0b10000000:
         print('Status bit set, so RTC may not have kept time well. Set time '
               'again with reset_osf=True to reset.')
+
 
 def check_time(i2c):
     # assumes 24 hour time is set
@@ -67,6 +72,7 @@ def set_time(i2c, yr, mon, date, day, hr, min, sec, reset_osf=True):
         toset = status_reg & 0b01111111  # reset osf bit to 0
         rtc_write(i2c, 0x0f, bytearray([toset]))
 
+
 def get_time(i2c):
     """
     returns yr, mon, day, hr, min, sec
@@ -75,6 +81,7 @@ def get_time(i2c):
     sec, min, hr, day, date, mon, yr = rtc_read(i2c, 0, 7)
     return from_bcd(yr), from_bcd(mon&0b11111), from_bcd(date), from_bcd(hr&0b111111), from_bcd(min), from_bcd(sec)
 
+
 def get_time_bytearray(i2c):
-    yr, mon, day, hr, min, sec = get_time(i2c)
-    return bytearray('dt:20{yr:02}-{mon:02}-{day:02} {hr}:{min}:{sec}.0'.format(**locals())
+    vals = dict(zip('yr,mon,day,hr,min,sec'.split(','), get_time(i2c)))
+    return bytearray('20{yr:02}-{mon:02}-{day:02}T{hr}:{min}:{sec}.0'.format(**vals))
