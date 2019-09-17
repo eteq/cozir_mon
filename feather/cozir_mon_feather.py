@@ -3,6 +3,7 @@ import busio
 import board
 import digitalio
 import rtc_time
+import battery_check_feather
 
 # constants according to http://www.co2meters.com/Documentation/Manuals/Manual-GSS-Sensors.pdf
 MEASUREMENT_PERIOD_SECS = .02
@@ -56,16 +57,23 @@ def setup_sd(mountpoint='/sd'):
 
 
 def setup_sgp30(i2c):
+    # try:
+    #     import adafruit_sgp30
+    #     # set up the SGP30
+    #     #sgp30 = adafruit_sgp30.Adafruit_SGP30(i2c)
+    #     print("SGP30 found - serial #", [hex(i) for i in sgp30.serial])
+    #     test_measurements = sgp30.eCO2, sgp30.TVOC
+    #     return sgp30
+    # except Exception as e:
+    #     print('adafruit_sgp30 not present or failed to init:' + str(e))
+    #     return None
+    while not i2c.try_lock():
+        pass
     try:
-        import adafruit_sgp30
-        # set up the SGP30
-        sgp30 = adafruit_sgp30.Adafruit_SGP30(i2c)
-        print("SGP30 found - serial #", [hex(i) for i in sgp30.serial])
-        test_measurements = sgp30.eCO2, sgp30.TVOC
-        return sgp30
-    except Exception as e:
-        print('adafruit_sgp30 not present or failed to init:' + str(e))
-        return None
+        i2c.writeto(0x58, bytes([0x20, 0x03]))
+        return True
+    finally:
+        i2c.unlock()
 
 
 def setup_bme280(i2c):
@@ -129,13 +137,13 @@ def ppm_to_rgb(co2_ppm, value=1):
     return int(255*value*rf), int(255*value*gf), int(255*value*bf)
 
 
-def main_loop(loop_time_sec=60, npx_brightness=.25):
+def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8):
     npx = setup_neopixels()
     i2c, found = setup_i2c_attached()
     sdcard, vfs = setup_sd('/sd')
-    #sgp30 = setup_sgp30(i2c) if 'sgp30' in found else None
+    sgp30 = setup_sgp30(i2c) if 'sgp30' in found else None
     #bme280 = setup_bme280(i2c) if 'bme280' in found else None
-    cozir_uart, cozir_warmup_time = setup_cozir(8)
+    cozir_uart, cozir_warmup_time = setup_cozir(cozir_filter)
 
     if 'rtc_ds3231' in found:
         get_timestamp = lambda:rtc_time.get_time_bytearray(i2c)
@@ -179,6 +187,33 @@ def main_loop(loop_time_sec=60, npx_brightness=.25):
                 co2_ppm = int(bs[19:24])  # filtered
                 print('CO2:', co2_ppm, 'ppm')
                 npx.fill(ppm_to_rgb(co2_ppm, npx_brightness))
+
+                if sgp30 is not None:
+                    while not i2c.try_lock():
+                        pass
+                    try:
+                        b = bytearray(5)
+                        i2c.writeto(0x58, bytes([0x20, 0x08]))
+                        time.sleep(.05)
+                        i2c.readfrom_into(0x58, b)
+                    finally:
+                        i2c.unlock()
+                    dt = get_timestamp()
+                    eco2 = (b[0] << 8) + b[1]
+                    # no CRC check
+                    tvoc = (b[3] << 8) + b[4]
+                    print('SGP30 eCO2:', eco2, 'TVOC:', tvoc)
+                    log_row([dt, bytearray('sgp30_eco2'), bytearray(repr(eco2))])
+                    log_row([dt, bytearray('sgp30_tvoc'), bytearray(repr(tvoc))])
+
+                bvolt = battery_check_feather.get_battery_voltage()
+                dt = get_timestamp()
+                log_row([dt, bytearray('battery_voltage'), bytearray(repr(bvolt))])
+                print('battery_voltage:', bvolt, 'V')
+
+                import gc
+                gc.collect()
+                print('mem', gc.mem_free())
 
             dt = time.monotonic() - st
             if dt < loop_time_sec:
