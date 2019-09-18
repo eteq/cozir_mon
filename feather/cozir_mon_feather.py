@@ -170,14 +170,17 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8):
         while True:
             st = time.monotonic()
 
-            print('Starting CO2 read cycle')
             npx.fill((0, 0, 0))
+            co2_ppm = None
+
+            print('Starting CO2 read cycle')
             cozir_uart.write(b'K 2\r\n')
             time.sleep(cozir_warmup_time)
             cozir_uart.reset_input_buffer()
             cozir_uart.write(b'Q\r\n')
             dt = get_timestamp()
             bs = cozir_uart.read(34)
+            cozir_uart.write(b'K 0\r\n')  # switch to sleep/no-sampling mode
             if bs is None:
                 print('No response from Cozir! not sampling CO2 data this run')
             else:
@@ -188,29 +191,30 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8):
                 co2_ppm = int(bs[19:24])  # filtered
                 print('CO2:', co2_ppm, 'ppm')
 
-                if sgp30 is not None:
-                    while not i2c.try_lock():
-                        pass
-                    try:
-                        b = bytearray(5)
-                        i2c.writeto(0x58, bytes([0x20, 0x08]))
-                        time.sleep(.05)
-                        i2c.readfrom_into(0x58, b)
-                    finally:
-                        i2c.unlock()
-                    dt = get_timestamp()
-                    eco2 = (b[0] << 8) + b[1]
-                    # no CRC check
-                    tvoc = (b[3] << 8) + b[4]
-                    print('SGP30 eCO2:', eco2, 'TVOC:', tvoc)
-                    log_row([dt, bytearray('sgp30_eco2'), bytearray(repr(eco2))])
-                    log_row([dt, bytearray('sgp30_tvoc'), bytearray(repr(tvoc))])
-
-                bvolt = battery_check_feather.get_battery_voltage()
+            if sgp30 is not None:
+                while not i2c.try_lock():
+                    pass
+                try:
+                    b = bytearray(5)
+                    i2c.writeto(0x58, bytes([0x20, 0x08]))
+                    time.sleep(.05)
+                    i2c.readfrom_into(0x58, b)
+                finally:
+                    i2c.unlock()
                 dt = get_timestamp()
-                log_row([dt, bytearray('battery_voltage'), bytearray(repr(bvolt))])
-                print('battery_voltage:', bvolt, 'V')
+                eco2 = (b[0] << 8) + b[1]
+                # no CRC check
+                tvoc = (b[3] << 8) + b[4]
+                print('SGP30 eCO2:', eco2, 'TVOC:', tvoc)
+                log_row([dt, bytearray('sgp30_eco2'), bytearray(repr(eco2))])
+                log_row([dt, bytearray('sgp30_tvoc'), bytearray(repr(tvoc))])
 
+            bvolt = battery_check_feather.get_battery_voltage()
+            dt = get_timestamp()
+            log_row([dt, bytearray('battery_voltage'), bytearray(repr(bvolt))])
+            print('battery_voltage:', bvolt, 'V')
+
+            if co2_ppm is not None:
                 npx.fill(ppm_to_rgb(co2_ppm, npx_brightness))
 
             dt = time.monotonic() - st
