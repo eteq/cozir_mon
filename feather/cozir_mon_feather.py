@@ -57,34 +57,28 @@ def setup_sd(mountpoint='/sd'):
 
 
 def setup_sgp30(i2c):
-    # try:
-    #     import adafruit_sgp30
-    #     # set up the SGP30
-    #     #sgp30 = adafruit_sgp30.Adafruit_SGP30(i2c)
-    #     print("SGP30 found - serial #", [hex(i) for i in sgp30.serial])
-    #     test_measurements = sgp30.eCO2, sgp30.TVOC
-    #     return sgp30
-    # except Exception as e:
-    #     print('adafruit_sgp30 not present or failed to init:' + str(e))
-    #     return None
-    while not i2c.try_lock():
-        pass
-    try:
-        i2c.writeto(0x58, bytes([0x20, 0x03]))
-        return True
-    finally:
-        i2c.unlock()
+    from adafruit_bus_device.i2c_device import I2CDevice
+
+    dev = I2CDevice(i2c, 0x58)
+    with dev:
+        dev.write(bytearray([0x20, 0x03]))
+    return dev
 
 
-def setup_bme280(i2c):
-    try:
-        import adafruit_bme280
-        bme280 = adafruit_bme280.Adafruit_BME280_I2C(i2c)
-        test_measurements = bme280.temperature, bme280.humidity, bme280.pressure
-        return bme280
-    except Exception as e:
-        print('adafruit_bme280 not present or failed to init:' + str(e))
-        return None
+# def setup_bme280(i2c):
+#     from adafruit_bus_device.i2c_device import I2CDevice
+#
+#     dev = I2CDevice(i2c, 0x77)
+#     with dev:
+#         # soft reset
+#         dev.write(bytearray([0xE0, 0xB6]))
+#         time.sleep(.002) #2ms startup time
+#         # configure registers for weather-sensing-ish mode
+#         dev.write(bytearray([0xF2, 0b1]))
+#         dev.write(bytearray([0xF4, 0b100100]))
+#         dev.write(bytearray([0xF5, 0]))
+#     return dev
+
 
 def setup_cozir(digital_filter_value=32):
     uart = busio.UART(board.TX, board.RX, baudrate=9600, receiver_buffer_size=64)
@@ -137,12 +131,14 @@ def ppm_to_rgb(co2_ppm, value=1):
     return int(255*value*rf), int(255*value*gf), int(255*value*bf)
 
 
-def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8):
+def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
+              log_battery=True):
     npx = setup_neopixels()
     i2c, found = setup_i2c_attached()
     sdcard, vfs = setup_sd('/sd')
     sgp30 = setup_sgp30(i2c) if 'sgp30' in found else None
     #bme280 = setup_bme280(i2c) if 'bme280' in found else None
+    bme280 = None
     cozir_uart, cozir_warmup_time = setup_cozir(cozir_filter)
 
     if 'rtc_ds3231' in found:
@@ -191,16 +187,25 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8):
                 co2_ppm = int(bs[19:24])  # filtered
                 print('CO2:', co2_ppm, 'ppm')
 
+            if bme280 is not None:
+                setreg = bytearray(1)
+                data = bytearray(8)
+                with bme280:
+                    bme280.write_then_readinto(bytearray([0xF4]), setreg)
+                    setreg[0] = setreg[0] | 0b1 # set forced mode
+                    bme280.write(bytearray([0xF4, setreg[0]]))
+                    time.sleep(.01) # ~10ms is a max sampling time with these settings according to datasheet
+                    bme280.write_then_readinto(bytearray([0xF7]), data)
+                    print('bme280 data', data)
+
             if sgp30 is not None:
-                while not i2c.try_lock():
-                    pass
-                try:
-                    b = bytearray(5)
-                    i2c.writeto(0x58, bytes([0x20, 0x08]))
+                b = bytearray(5)
+                with sgp30:
+                    sgp30.write(bytes([0x20, 0x08]), stop=False)
                     time.sleep(.05)
-                    i2c.readfrom_into(0x58, b)
-                finally:
-                    i2c.unlock()
+                    sgp30.readinto(b)
+                    #sgp30.write_then_readinto(bytearray([0x20, 0x08]), b)
+
                 dt = get_timestamp()
                 eco2 = (b[0] << 8) + b[1]
                 # no CRC check
@@ -209,13 +214,18 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8):
                 log_row([dt, bytearray('sgp30_eco2'), bytearray(repr(eco2))])
                 log_row([dt, bytearray('sgp30_tvoc'), bytearray(repr(tvoc))])
 
-            bvolt = battery_check_feather.get_battery_voltage()
-            dt = get_timestamp()
-            log_row([dt, bytearray('battery_voltage'), bytearray(repr(bvolt))])
-            print('battery_voltage:', bvolt, 'V')
+            if log_battery:
+                bvolt = battery_check_feather.get_battery_voltage()
+                dt = get_timestamp()
+                log_row([dt, bytearray('battery_voltage'), bytearray(repr(bvolt))])
+                print('battery_voltage:', bvolt, 'V')
 
             if co2_ppm is not None:
                 npx.fill(ppm_to_rgb(co2_ppm, npx_brightness))
+
+            import gc
+            gc.collect()
+            print('mem_free:', gc.mem_free())
 
             dt = time.monotonic() - st
             if dt < loop_time_sec:
