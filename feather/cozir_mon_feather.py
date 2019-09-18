@@ -171,6 +171,7 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8):
             st = time.monotonic()
 
             print('Starting CO2 read cycle')
+            npx.fill((0, 0, 0))
             cozir_uart.write(b'K 2\r\n')
             time.sleep(cozir_warmup_time)
             cozir_uart.reset_input_buffer()
@@ -186,7 +187,6 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8):
                 log_row([dt, bytearray('cozirA_raw'), bs[27:32]])
                 co2_ppm = int(bs[19:24])  # filtered
                 print('CO2:', co2_ppm, 'ppm')
-                npx.fill(ppm_to_rgb(co2_ppm, npx_brightness))
 
                 if sgp30 is not None:
                     while not i2c.try_lock():
@@ -211,9 +211,7 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8):
                 log_row([dt, bytearray('battery_voltage'), bytearray(repr(bvolt))])
                 print('battery_voltage:', bvolt, 'V')
 
-                import gc
-                gc.collect()
-                print('mem', gc.mem_free())
+                npx.fill(ppm_to_rgb(co2_ppm, npx_brightness))
 
             dt = time.monotonic() - st
             if dt < loop_time_sec:
