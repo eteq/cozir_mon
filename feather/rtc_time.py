@@ -1,7 +1,3 @@
-import board
-import busio
-
-
 def from_bcd(b):  # from BCD to binary
     return b - 6 * (b >> 4)
 
