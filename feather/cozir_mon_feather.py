@@ -65,19 +65,23 @@ def setup_sgp30(i2c):
     return dev
 
 
-# def setup_bme280(i2c):
-#     from adafruit_bus_device.i2c_device import I2CDevice
-#
-#     dev = I2CDevice(i2c, 0x77)
-#     with dev:
-#         # soft reset
-#         dev.write(bytearray([0xE0, 0xB6]))
-#         time.sleep(.002) #2ms startup time
-#         # configure registers for weather-sensing-ish mode
-#         dev.write(bytearray([0xF2, 0b1]))
-#         dev.write(bytearray([0xF4, 0b100100]))
-#         dev.write(bytearray([0xF5, 0]))
-#     return dev
+def setup_bme280(i2c):
+    from adafruit_bus_device.i2c_device import I2CDevice
+    #import bme280_calib
+
+    dev = I2CDevice(i2c, 0x77)
+    with dev:
+        # soft reset
+        dev.write(bytearray([0xE0, 0xB6]))
+        time.sleep(.002) #2ms startup time
+        # configure registers for weather-sensing-ish mode
+        dev.write(bytearray([0xF2, 0b1]))
+        dev.write(bytearray([0xF4, 0b100100]))
+        dev.write(bytearray([0xF5, 0]))
+
+    #calibs = bme280_calib.get_calibs(dev)  # aquires the lock itself
+    #dev.calib_vals = calibs
+    return dev
 
 
 def setup_cozir(digital_filter_value=32):
@@ -137,8 +141,7 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
     i2c, found = setup_i2c_attached()
     sdcard, vfs = setup_sd('/sd')
     sgp30 = setup_sgp30(i2c) if 'sgp30' in found else None
-    #bme280 = setup_bme280(i2c) if 'bme280' in found else None
-    bme280 = None
+    bme280 = setup_bme280(i2c) if 'bme280' in found else None
     cozir_uart, cozir_warmup_time = setup_cozir(cozir_filter)
 
     if 'rtc_ds3231' in found:
@@ -188,6 +191,8 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
                 print('CO2:', co2_ppm, 'ppm')
 
             if bme280 is not None:
+                import bme280_calib
+
                 setreg = bytearray(1)
                 data = bytearray(8)
                 with bme280:
@@ -196,7 +201,10 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
                     bme280.write(bytearray([0xF4, setreg[0]]))
                     time.sleep(.01) # ~10ms is a max sampling time with these settings according to datasheet
                     bme280.write_then_readinto(bytearray([0xF7]), data)
-                    print('bme280 data', data)
+
+                    p_raw, t_raw, h_raw = bme280_calib.data_registers_to_raw(data)
+                    # t_calib = bme280_calib.raw_to_calibrated_temp(t_raw, bme280.calib_vals)
+                    # print('bme280 temp', t_calib)
 
             if sgp30 is not None:
                 b = bytearray(5)
@@ -220,12 +228,12 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
                 log_row([dt, bytearray('battery_voltage'), bytearray(repr(bvolt))])
                 print('battery_voltage:', bvolt, 'V')
 
-            if co2_ppm is not None:
-                npx.fill(ppm_to_rgb(co2_ppm, npx_brightness))
-
             import gc
             gc.collect()
             print('mem_free:', gc.mem_free())
+
+            if co2_ppm is not None:
+                npx.fill(ppm_to_rgb(co2_ppm, npx_brightness))
 
             dt = time.monotonic() - st
             if dt < loop_time_sec:
