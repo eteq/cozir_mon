@@ -67,7 +67,6 @@ def setup_sgp30(i2c):
 
 def setup_bme280(i2c):
     from adafruit_bus_device.i2c_device import I2CDevice
-    #import bme280_calib
 
     dev = I2CDevice(i2c, 0x77)
     with dev:
@@ -79,8 +78,6 @@ def setup_bme280(i2c):
         dev.write(bytearray([0xF4, 0b100100]))
         dev.write(bytearray([0xF5, 0]))
 
-    #calibs = bme280_calib.get_calibs(dev)  # aquires the lock itself
-    #dev.calib_vals = calibs
     return dev
 
 
@@ -191,20 +188,8 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
                 print('CO2:', co2_ppm, 'ppm')
 
             if bme280 is not None:
-                import bme280_calib
+                asdf
 
-                setreg = bytearray(1)
-                data = bytearray(8)
-                with bme280:
-                    bme280.write_then_readinto(bytearray([0xF4]), setreg)
-                    setreg[0] = setreg[0] | 0b1 # set forced mode
-                    bme280.write(bytearray([0xF4, setreg[0]]))
-                    time.sleep(.01) # ~10ms is a max sampling time with these settings according to datasheet
-                    bme280.write_then_readinto(bytearray([0xF7]), data)
-
-                    p_raw, t_raw, h_raw = bme280_calib.data_registers_to_raw(data)
-                    # t_calib = bme280_calib.raw_to_calibrated_temp(t_raw, bme280.calib_vals)
-                    # print('bme280 temp', t_calib)
 
             if sgp30 is not None:
                 b = bytearray(5)
@@ -227,10 +212,6 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
                 dt = get_timestamp()
                 log_row([dt, bytearray('battery_voltage'), bytearray(repr(bvolt))])
                 print('battery_voltage:', bvolt, 'V')
-
-            import gc
-            gc.collect()
-            print('mem_free:', gc.mem_free())
 
             if co2_ppm is not None:
                 npx.fill(ppm_to_rgb(co2_ppm, npx_brightness))
