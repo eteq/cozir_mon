@@ -172,11 +172,11 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
             tcalibs, pcalibs, hcalibs = bme280_calib.get_calibs(bme280)
         print('Saving bme280 calib info')
         for i, tc in enumerate(tcalibs):
-            log_row([dt, bytearray('bme280_tcalib_' + str(i)), bytearray(repr(int(tc)))])
+            log_row([dt, bytearray('bme280_calib_t_' + str(i)), bytearray(repr(int(tc)))])
         for i, pc in enumerate(pcalibs):
-            log_row([dt, bytearray('bme280_pcalib_' + str(i)), bytearray(repr(int(pc)))])
+            log_row([dt, bytearray('bme280_calib_p_' + str(i)), bytearray(repr(int(pc)))])
         for i, hc in enumerate(hcalibs):
-            log_row([dt, bytearray('bme280_hcalib_' + str(i)), bytearray(repr(int(hc)))])
+            log_row([dt, bytearray('bme280_calib_h_' + str(i)), bytearray(repr(int(hc)))])
         del tcalibs, pcalibs, hcalibs
 
         del bme280_calib
