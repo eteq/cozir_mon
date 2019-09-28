@@ -1,17 +1,16 @@
 import struct
 
 def get_calibs(i2cdev):
+    # requires that the lock already be present!
     tp_bytes = bytearray(24)
-    with i2cdev:
-        i2cdev.write_then_readinto(bytearray([0x88]), tp_bytes)
+    i2cdev.write_then_readinto(bytearray([0x88]), tp_bytes)
     tp_coeffs = struct.unpack('<HhhHhhhhhhhh', tp_bytes)
     t_calib = [float(c) for c in tp_coeffs[:3]]
     p_calib = [float(c) for c in tp_coeffs[3:]]
 
     # reuse the allocated array
-    with i2cdev:
-        i2cdev.write_then_readinto(bytearray([0xa1]), tp_bytes, in_start=0, in_end=1)
-        i2cdev.write_then_readinto(bytearray([0xe1]), tp_bytes, in_start=1, in_end=8)
+    i2cdev.write_then_readinto(bytearray([0xa1]), tp_bytes, in_start=0, in_end=1)
+    i2cdev.write_then_readinto(bytearray([0xe1]), tp_bytes, in_start=1, in_end=8)
 
     h_coeffs = struct.unpack('<BhBbBbb', tp_bytes[:8])
     h_calib = [None]*6

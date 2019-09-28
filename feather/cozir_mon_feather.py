@@ -1,3 +1,4 @@
+import sys
 import time
 import busio
 import board
@@ -162,6 +163,25 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
                 fw.write(b)
             fw.write(b'\n')
             fw.flush()
+
+    if bme280 is not None:
+        import bme280_calib
+
+        dt = get_timestamp()
+        with bme280:
+            tcalibs, pcalibs, hcalibs = bme280_calib.get_calibs(bme280)
+        print('Saving bme280 calib info')
+        for i, tc in enumerate(tcalibs):
+            log_row([dt, bytearray('bme280_tcalib_' + str(i)), bytearray(repr(int(tc)))])
+        for i, pc in enumerate(pcalibs):
+            log_row([dt, bytearray('bme280_pcalib_' + str(i)), bytearray(repr(int(pc)))])
+        for i, hc in enumerate(hcalibs):
+            log_row([dt, bytearray('bme280_hcalib_' + str(i)), bytearray(repr(int(hc)))])
+        del tcalibs, pcalibs, hcalibs
+
+        del bme280_calib
+        del sys.modules['bme280_calib']
+
     try:
         while True:
             st = time.monotonic()
@@ -188,7 +208,26 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
                 print('CO2:', co2_ppm, 'ppm')
 
             if bme280 is not None:
-                asdf
+                with bme280:
+                    setup_bytes = bytearray(1)
+                    bme280.write_then_readinto(bytearray([0xf4]), setup_bytes)
+                    bme280.write(bytearray([0xf4, (setup_bytes[0] & 0b11111100) | 0b1]))
+
+                    # make sure measurement/setup completes
+                    setup_bytes[0] = 1
+                    while (setup_bytes[0] & 0b1001) != 0:
+                        bme280.write_then_readinto(bytearray([0xf3]), setup_bytes)
+
+                    tph_bytes = bytearray(8)
+                    bme280.write_then_readinto(bytearray([0xf7]), tph_bytes)
+                praw = (tph_bytes[2] >> 4) | (tph_bytes[1] << 4) | (tph_bytes[0]<< 12)
+                traw = (tph_bytes[5] >> 4) | (tph_bytes[4] << 4) | (tph_bytes[3]<< 12)
+                hraw = (tph_bytes[7]) | (tph_bytes[6] << 8)
+                log_row([dt, bytearray('bme280_temp_raw'), bytearray(repr(traw))])
+                log_row([dt, bytearray('bme280_pressure_raw'), bytearray(repr(praw))])
+                log_row([dt, bytearray('bme280_humidity_raw'), bytearray(repr(hraw))])
+
+                del praw, traw, hraw, tph_bytes, setup_bytes
 
 
             if sgp30 is not None:
