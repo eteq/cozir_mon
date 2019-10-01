@@ -1,3 +1,4 @@
+import re
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -20,13 +21,39 @@ def parse_cozir_file(file):
 
 
 def plot_cozir_data(tab, outfilename=None, width=10, heightperplot=5):
-    grp_tab = tab.group_by('measurement_type')
+    try:
+        bmecalib = BME280_calibrator.coeffs_from_table(tab)
+    except ValueError:
+        bmecalib = None
+    if bmecalib is not None:
+        # assume both raw measurements *and* calibs are present if cals are ok.
+        calib_tabs = {}
+        for nm in ['temp', 'pressure', 'humidity']:
+            calib_tabs[nm] = nmtab = tab[tab['measurement_type'] == f'bme280_{nm}_raw']
+            nmcalib = getattr(bmecalib, 'calibrate_' + nm)(nmtab['value'])
+            nmtab['value'][:] = nmcalib
+            nmtab['measurement_type'][:] = 'bme280_' + nm
+
+        # now identify the raw/calib rows and remove them
+        skipmsk = np.ones(len(tab), dtype=bool)
+        for mtype in np.unique(tab['measurement_type']):
+            if mtype.startswith('bme280_calib'):
+                skipmsk &= tab['measurement_type']!=mtype
+            elif mtype.startswith('bme280_') and mtype.endswith('_raw'):
+                skipmsk &= tab['measurement_type']!=mtype
+
+        # now drop the raws and add back in the calibrated measurements
+        tab = table.vstack([tab[skipmsk], calib_tabs['temp'],
+                                          calib_tabs['pressure'],
+                                          calib_tabs['humidity']])
+
+    grped_tab = tab.group_by('measurement_type')
     ccycle = iter(plt.rcParams['axes.prop_cycle'].by_key()['color'])
 
-    height = len(grp_tab.groups) * heightperplot
-    fig, axs = plt.subplots(len(grp_tab.groups), 1, figsize=(width, height))
+    height = len(grped_tab.groups) * heightperplot
+    fig, axs = plt.subplots(len(grped_tab.groups), 1, figsize=(width, height))
 
-    for grp, ax in zip(grp_tab.groups, axs.ravel()):
+    for grp, ax in zip(grped_tab.groups, axs.ravel()):
         ax.plot_date(grp['timestamp'].plot_date, grp['value'],
                       fmt='-', color=next(ccycle))
         ax.set_xlabel('date')
@@ -38,23 +65,6 @@ def plot_cozir_data(tab, outfilename=None, width=10, heightperplot=5):
 
     if outfilename is not None:
         plt.savefig(outfilename)
-
-if __name__ == '__main__':
-    import sys
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('input_file', help='file to parse and plot or "-" for stdin')
-    parser.add_argument('output_name', nargs='?', help='filename to save the plot to', default=None)
-
-    args = parser.parse_args()
-
-    if args.input_file == '-':
-        data_table = parse_cozir_file(sys.stdin)
-    else:
-        data_table = parse_cozir_file(args.input_file)
-
-    plot_cozir_data(data_table, outfilename=args.output_name)
 
 
 class BME280_calibrator:
@@ -80,6 +90,13 @@ class BME280_calibrator:
                                            t == calib_type}
             calib_meas_name = [calib_num_to_name[k] for k in sorted(calib_num_to_name.keys())]
             calib_coeffs.append([tab[tab['measurement_type']==n][which]['value'] for n in calib_meas_name])
+
+        if len(calib_coeffs[0]) < 3:
+            raise ValueError('could not find all temp calib coeffs')
+        if len(calib_coeffs[1]) < 9:
+            raise ValueError('could not find all pressure calib coeffs')
+        if len(calib_coeffs[2]) < 6:
+            raise ValueError('could not find all humidity calib coeffs')
 
         return cls(*calib_coeffs)
 
@@ -151,6 +168,19 @@ class BME280_calibrator:
         return calibed
 
 
+if __name__ == '__main__':
+    import sys
+    import argparse
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('input_file', help='file to parse and plot or "-" for stdin')
+    parser.add_argument('output_name', nargs='?', help='filename to save the plot to', default=None)
 
-#traw = tab[tab['measurement_type']=='bme280_temp_raw']['value']
+    args = parser.parse_args()
+
+    if args.input_file == '-':
+        data_table = parse_cozir_file(sys.stdin)
+    else:
+        data_table = parse_cozir_file(args.input_file)
+
+    plot_cozir_data(data_table, outfilename=args.output_name)
