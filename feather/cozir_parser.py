@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 from astropy import table, time
 
 
-def parse_cozir_file(file):
+def parse_cozir_file(file, start_time=None, end_time=None):
     if hasattr(file, 'read'):
         t = table.Table.read(file.read(), format='ascii')
     else:  # assume name
@@ -16,6 +16,16 @@ def parse_cozir_file(file):
                      ['timestamp', 'measurement_type', 'value'])
 
     t['timestamp'] = time.Time(t['timestamp'])
+
+    if start_time is not None:
+        if not isinstance(start_time, time.Time):
+            start_time = time.Time(start_time)
+        t = t[t['timestamp']>=start_time]
+    if end_time is not None:
+        if not isinstance(end_time, time.Time):
+            end_time = time.Time(end_time)
+        t = t[t['timestamp']<=end_time]
+
 
     return t
 
@@ -175,12 +185,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('input_file', help='file to parse and plot or "-" for stdin')
     parser.add_argument('output_name', nargs='?', help='filename to save the plot to', default=None)
+    parser.add_argument('--start-time', default=None, help='A timestamp for the earliest data point to use.')
+    parser.add_argument('--end-time', default=None, help='A timestamp for the latest data point to use.')
 
     args = parser.parse_args()
 
+    parsekwargs = dict(start_time=args.start_time, end_time=args.end_time)
     if args.input_file == '-':
-        data_table = parse_cozir_file(sys.stdin)
+        data_table = parse_cozir_file(sys.stdin, **parsekwargs)
     else:
-        data_table = parse_cozir_file(args.input_file)
+        data_table = parse_cozir_file(args.input_file, **parsekwargs)
 
     plot_cozir_data(data_table, outfilename=args.output_name)
