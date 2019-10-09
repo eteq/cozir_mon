@@ -123,16 +123,6 @@ def setup_i2c_attached():
     return i2c, tuple(found)
 
 
-def ppm_to_rgb(co2_ppm, value=1):
-    rf = max(0, (co2_ppm - 1500)/500)
-    gf = max(0, (1500-co2_ppm)/1500)
-    if co2_ppm < 1200:
-        bf = co2_ppm/1200
-    else:
-        bf = max(0, (1600-co2_ppm)/400)
-    return int(255*value*rf), int(255*value*gf), int(255*value*bf)
-
-
 def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
               log_battery=True):
     npx = setup_neopixels()
@@ -253,6 +243,7 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
                 print('battery_voltage:', bvolt, 'V')
 
             if co2_ppm is not None:
+                from ppm_to_rgb import ppm_to_rgb
                 npx.fill(ppm_to_rgb(co2_ppm, npx_brightness))
 
             dt = time.monotonic() - st
