@@ -243,8 +243,8 @@ def main_loop(loop_time_sec=60, npx_brightness=.5, cozir_filter=8,
                 print('battery_voltage:', bvolt, 'V')
 
             if co2_ppm is not None:
-                from ppm_to_rgb import ppm_to_rgb
-                npx.fill(ppm_to_rgb(co2_ppm, npx_brightness))
+                import ppm_to_rgb
+                npx.fill(ppm_to_rgb.ppm_to_rgb(co2_ppm, npx_brightness))
 
             dt = time.monotonic() - st
             if dt < loop_time_sec:
