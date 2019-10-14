@@ -12,7 +12,7 @@ There are several different options that will work fine for this project.  The o
 
 If you go the Adalogger direction you'll also need:
 1. An SD Card (buy just about anywhere you can get cameras, smartphones, etc)
-2. A Neopixel to show the CO2 level. Easiest option is probably https://www.adafruit.com/product/1312, but you'll want
+2. A Neopixel to show the CO2 level. Easiest option is probably https://www.adafruit.com/product/1312, but you might also consider https://www.adafruit.com/product/1938, https://www.adafruit.com/product/1655, and https://www.adafruit.com/product/1938 (in order of soldering difficulty).
 3. A [FeatherWing Proto](https://www.adafruit.com/product/2884) to solder your components to the adalogger, and headers to connect the feather to the FeatherWing (see the Adafruit pages on those product for specific options).
 
 ## CO2 Sensor
