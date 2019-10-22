@@ -1,9 +1,13 @@
 import re
+import sys
+from collections import defaultdict
 
 import numpy as np
 from matplotlib import pyplot as plt
 
 from astropy import table, time
+
+import atmosphere_conversions
 
 
 def parse_cozir_file(file, start_time=None, end_time=None):
@@ -26,11 +30,16 @@ def parse_cozir_file(file, start_time=None, end_time=None):
             end_time = time.Time(end_time)
         t = t[t['timestamp']<=end_time]
 
-
     return t
 
 
-def plot_cozir_data(tab, outfilename=None, width=10, heightperplot=5):
+def plot_cozir_data(tab, outfilename=None, width=10, heightperplot=5,
+                    include_types=None, exclude_types=None,
+                    humidity_unit='rel', temp_unit='c'):
+    if include_types is not None and exclude_types is not None:
+        raise ValueError('at least one of include_types and exclude_types must '
+                         'be None')
+
     try:
         bmecalib = BME280_calibrator.coeffs_from_table(tab)
     except ValueError:
@@ -57,19 +66,90 @@ def plot_cozir_data(tab, outfilename=None, width=10, heightperplot=5):
                                           calib_tabs['pressure'],
                                           calib_tabs['humidity']])
 
+    # group the table into individual measurements, and then put the individual
+    # time series into sets based on the physical type of the measurement
     grped_tab = tab.group_by('measurement_type')
+
+    # map of "known" measurement names to their type for grouping
+    plot_types = {'cozirA_filtered': 'co2',
+                  'cozirA_raw': 'co2',
+                  'sgp30_eco2': 'co2',
+                  'bme280_temp': 'temperature',
+                  'cozirA_temperature': 'temperature',
+                  'bme280_pressure': 'pressure',
+                  'bme280_humidity': 'humidity',
+                  'cozirA_humidity': 'humidity'}
+
+    plot_groups = defaultdict(list)  # keys are plot types, values are lists of (x, y, name) tuples
+    for grp in grped_tab.groups:
+        type_name = grp['measurement_type'][0]
+        if include_types is not None and type_name not in include_types:
+            continue
+        if exclude_types is not None and type_name in exclude_types:
+            continue
+
+        plot_type = plot_types.get(type_name, type_name)
+        plot_groups[plot_type].append((grp['timestamp'].plot_date, grp['value'], type_name))
+
     ccycle = iter(plt.rcParams['axes.prop_cycle'].by_key()['color'])
+    height = len(plot_groups) * heightperplot
+    fig, axs = plt.subplots(len(plot_groups), 1, figsize=(width, height))
 
-    height = len(grped_tab.groups) * heightperplot
-    fig, axs = plt.subplots(len(grped_tab.groups), 1, figsize=(width, height))
+    # define some transformations for particular plot types:
+    y_transforms = defaultdict(lambda: lambda x: x)
+    y_transforms['pressure'] = lambda x: x/101325.  # Pa->atm
 
-    for grp, ax in zip(grped_tab.groups, axs.ravel()):
-        ax.plot_date(grp['timestamp'].plot_date, grp['value'],
-                      fmt='-', color=next(ccycle))
+    if temp_unit == 'c':
+        pass
+    elif temp_unit == 'f':
+        y_transforms['temperature'] = atmosphere_conversions.c_to_f
+    else:
+        raise ValueError(f'invalid temperature unit {temp_unit}')
+
+    if humidity_unit == 'dewpoint':
+        t = plot_groups['temperature'][0][1]
+        def dptrans(rh):
+            return atmosphere_conversions.hum_rel_to_dewpoint(rh/100, t)
+        y_transforms['humidity'] = lambda x: y_transforms['temperature'](dptrans(x))
+    elif humidity_unit == 'abs':
+        t = plot_groups['temperature'][0][1]
+        def abshumtrans(rh):
+            return atmosphere_conversions.hum_rel_to_abs(rh/100, t)
+        y_transforms['humidity'] = abshumtrans
+    elif humidity_unit == 'rel':
+        pass
+    else:
+        raise ValueError(f'invalid humidity unit {humidity_unit}')
+
+    for grpname, grpvals, ax in zip(plot_groups.keys(), plot_groups.values(), axs.ravel()):
+        for val in grpvals:
+            ax.plot_date(val[0], y_transforms[grpname](val[1]), color=next(ccycle), label=val[2], fmt='-')
         ax.set_xlabel('date')
-        ax.set_ylabel(grp['measurement_type'][0])
+        ax.set_ylabel(grpname)
+        ax.legend()
         for l in ax.xaxis.get_majorticklabels():
             l.set_rotation(45)
+
+        if grpname == 'pressure':
+            yl, yu = ax.get_ylim()
+            ax2 = ax.twinx()
+            ax2.set_ylim(yl*101.325, yu*101.325)
+            ax2.set_ylabel('[kPa]')
+            ax.set_ylabel('pressure [atm]')
+        elif grpname == 'co2':
+            ax.set_ylabel('CO2 concentration [ppm]')
+        elif grpname == 'temperature':
+            if temp_unit == 'f':
+                ax.set_ylabel('temperature [deg F]')
+            else:
+                ax.set_ylabel('temperature [deg C]')
+        elif grpname == 'humidity':
+            if humidity_unit == 'rel':
+                ax.set_ylabel('Relative Humidity [%]')
+            elif humidity_unit == 'abs':
+                ax.set_ylabel(r'Absolute Humidity [$g\;m^{-3}$]')
+            elif humidity_unit == 'dewpoint':
+                ax.set_ylabel(f'Dew Point [deg {temp_unit}]')
 
     fig.tight_layout()
 
@@ -187,6 +267,11 @@ if __name__ == '__main__':
     parser.add_argument('output_name', nargs='?', help='filename to save the plot to', default=None)
     parser.add_argument('--start-time', default=None, help='A timestamp for the earliest data point to use.')
     parser.add_argument('--end-time', default=None, help='A timestamp for the latest data point to use.')
+    parser.add_argument('--include', default=None, help='A comma-separated list of measurement types to include')
+    parser.add_argument('--exclude', default=None, help='A comma-separated list of measurement types to exclude')
+    parser.add_argument('-d', '--dewpoint', action='store_true', help='Show the dewpoint instead of relative humidity')
+    parser.add_argument('-a', '--absolute-humidity', action='store_true', help='Show the absolute instead of relative humidity')
+    parser.add_argument('-f', '--farenheit', action='store_true', help='Set temperature unit to farenheit')
 
     args = parser.parse_args()
 
@@ -196,4 +281,22 @@ if __name__ == '__main__':
     else:
         data_table = parse_cozir_file(args.input_file, **parsekwargs)
 
-    plot_cozir_data(data_table, outfilename=args.output_name)
+    if args.include is not None and args.exclude is not None:
+        print('Cannot both include and exclude!')
+        sys.exit(1)
+
+    humidity_unit = 'rel'
+    if args.dewpoint and args.absolute_humidity:
+        print('Cannot do both dewpoint and absolute humidity')
+        sys.exit(1)
+    elif args.dewpoint:
+        humidity_unit = 'dewpoint'
+    elif args.absolute_humidity:
+        humidity_unit = 'abs'
+
+
+    plot_cozir_data(data_table, outfilename=args.output_name,
+                    temp_unit='f' if args.farenheit else 'c',
+                    humidity_unit=humidity_unit,
+                    include_types=None if args.include is None else args.include.split(','),
+                    exclude_types=None if args.exclude is None else args.exclude.split(','))
