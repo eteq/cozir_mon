@@ -138,6 +138,9 @@ def plot_cozir_data(tab, outfilename=None, width=10, heightperplot=5,
             ax.set_ylabel('pressure [atm]')
         elif grpname == 'co2':
             ax.set_ylabel('CO2 concentration [ppm]')
+            ax.axhline(1000, c='yellow', ls=':')
+            ax.axhline(1500, c='orange', ls='--')
+            ax.axhline(2000, c='r', ls='-')
         elif grpname == 'temperature':
             if temp_unit == 'f':
                 ax.set_ylabel('temperature [deg F]')
@@ -154,7 +157,10 @@ def plot_cozir_data(tab, outfilename=None, width=10, heightperplot=5,
     fig.tight_layout()
 
     if outfilename is not None:
-        plt.savefig(outfilename)
+        if outfilename == '-':
+            plt.savefig(sys.stdout.buffer)
+        else:
+            plt.savefig(outfilename)
 
 
 class BME280_calibrator:
