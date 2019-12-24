@@ -7,7 +7,7 @@ Requires pyserial
 """
 import time
 import serial
-from datetime import datetime
+from datetime import datetime, timedelta
 
 CTRLC = chr(3).encode()
 CTRLD = chr(4).encode()
@@ -75,6 +75,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--baudrate', '-b', default=115200)
     parser.add_argument('--waittime', '-w', default=0.5)
+    parser.add_argument('--tzoffset', '-z', default=0.0)
+    parser.add_argument('--offset-secs', '-o', default=0.0)
     parser.add_argument('serialport')
 
     args = parser.parse_args()
@@ -83,5 +85,6 @@ if __name__ == '__main__':
                        timeout=args.waittime) as ser:
 
         get_repl(ser, args.waittime)
-        res = set_time_from_datetime(ser, datetime.now())
+        dt = timedelta(seconds=args.offset_secs, hours=args.tzoffset)
+        res = set_time_from_datetime(ser, datetime.now() + dt)
         print("Result from setting time:", res)
